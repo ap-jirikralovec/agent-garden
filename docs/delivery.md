@@ -1,0 +1,324 @@
+# MVP delivery agreement
+
+Source: the approved conversation on 2026-10-19. Implementation uses Rails.
+
+## Requirements and approved decisions
+
+- Local browser dashboard, macOS first, Vue 3 + TypeScript + Vite.
+- Track dashboard-created Codex sessions initially; discover other sessions later.
+- Cards show agent name, project, current task (latest user prompt), model/reasoning,
+  and Working / Waiting for input / Finished / Failed / Idle.
+- Finished means the latest Codex response completed, not proof the task succeeded.
+- Disconnected is a monitoring indicator: preserve last state and last seen, retry
+  automatically, and refresh state on reconnection.
+- Add-agent dialog accepts name, project folder, model and reasoning. Confirmation
+  creates a Codex session and opens a terminal ready for the first task.
+- Check the project folder on blur. If missing, require a checkbox confirming
+  creation, reset consent when the path changes, and create missing parents
+  recursively only on Create & open terminal. Existing files/access errors must
+  not be treated as missing folders. The server rechecks on submission.
+- Open terminal uses the exact Codex thread ID. Conversation and approvals stay in
+  Codex's terminal UI. No chat, approval handling, or task execution in the dashboard.
+- Use the configured default terminal where possible, Terminal.app fallback.
+- Persist tracked IDs and names across restarts. Prepare an npm executable; publishing
+  to npm and the cat playground are excluded.
+- Approved extension: a common built-in provider interface and Codex adapter,
+  persistent connection toggles in a settings modal, provider labels on cards,
+  provider-specific terminal routing, and backend-provided models/reasoning.
+  Provider identity is the closed `codex | claude` union with runtime validation;
+  no external plugins. Claude itself remains unimplemented. Existing cards keep
+  their identities. Session discovery and origin/provider filters are follow-up
+  work, as requested after this update.
+
+## Implementation approach
+
+Node's built-in HTTP server serves built Vue assets and a local API. A JSON-RPC client connects through
+`codex app-server proxy` to the existing daemon. SSE sends dashboard snapshots.
+Poll tracked threads only, supplementing status events, without resuming agents just
+to monitor them. Store small metadata in an atomic local JSON file. Generate safe
+`.command` launch files for macOS rather than interpolate user input into scripts.
+
+## Planned acceptance evidence
+
+- Test status mapping including wait flags, failure, completion, interruption, and idle.
+- Test disconnect/reconnect, stale state and missing sessions, task extraction,
+  persistence, concurrent requests, validation and terminal argument escaping.
+- Browser smoke check for the dashboard and dialog when a browser and local server
+  can run. Keep the automated check set small, as requested during implementation.
+- Isolated installed-Codex protocol check: initialize, model catalog, thread creation,
+  read, metadata/settings and persistence across process restart.
+- Real terminal workflow: open -> task -> status -> respond -> close -> continued work.
+  The current sandbox blocks the existing daemon socket and native terminal launch;
+  report checks actually performed separately from this planned evidence.
+
+## Verification outcomes
+
+Implemented the scoped Vue dashboard, metadata store, read-only Codex monitor,
+terminal launchers and npm executable. The CLI package contains built browser assets
+and uses Node built-ins plus `ws` for the shared server's WebSocket protocol.
+Vue and build/test tools are dev dependencies.
+
+- Eight initial focused checks pass: work/wait/approval mapping, completion/failure/interrupt,
+  stale unloaded state, current task and model extraction, runtime errors, concurrent
+  metadata writes/reload, corrupt metadata handling, and shell argument quoting.
+- Vue/server TypeScript checks and the production build pass.
+- `npm pack` produces a roughly 50 kB executable package. Running its CLI with
+  `npm exec --offline --package ./codex-garden-0.1.0.tgz -- codex-garden --help`
+  succeeds from the packaged entry point, without runtime dependencies.
+- The installed Codex 0.163.0 smoke check creates an isolated no-task session, reads
+  its model catalog, saves the selected model/reasoning and title, monitors idle,
+  reopens the same ID, restarts app-server, reads saved history and resumes the exact
+  session with the preset intact. Monitoring/reopening submits no task or inference.
+- Real work/wait/failure transitions are checked with protocol-shaped fixtures;
+  the smoke check deliberately submits no model task. It does not prove task
+  execution survives terminal closure.
+- Local HTTP startup is blocked by this sandbox (`listen EPERM` on 127.0.0.1).
+  The existing Codex daemon socket and native terminal launch are also inaccessible.
+  Headless Chromium could not start here. Full browser behavior, actual default
+  terminal opening, answering a real approval/question, and closing the terminal
+  while a turn runs remain manual checks on the host. These are verification gaps,
+  not claims of successful end-to-end validation.
+- Git initialization is blocked by read-only Git metadata policy; no commit.
+- SonarQube is unavailable; no analysis ran.
+
+## Changes to the provisional approach
+
+- Replaced Fastify with Node's built-in HTTP server for the small API and SSE stream,
+  reducing dependencies and allowing the build from the local package cache.
+- Use polling of structured Codex read methods every two seconds. This avoids
+  subscribing via resume, which could load or affect a session just to observe it.
+- Restore model/reasoning through the server when the user opens an unloaded
+  session. A real restart check found that Codex's empty-thread resume can fall
+  back to global defaults. Keep normal terminal resume free of preset overrides,
+  so it reuses the local daemon and retains the restored settings. Monitoring
+  preserves the last observed preset while a session is unloaded.
+- Native terminal selection follows the macOS `.command` file association with a
+  Terminal.app fallback; arbitrary terminal-specific tab reuse is not implemented.
+
+## Host acceptance check still required
+
+Run `npm start`, create a session in a temporary project, check its model/reasoning
+in the opened terminal, submit a small task, observe Working and Finished, respond
+to a real request in the terminal, then close the terminal while a turn is active
+and verify whether Codex continues. Restart Garden to check the same card returns.
+
+## Connection correction
+
+The first host run showed `Codex did not respond to initialize`. The initial
+monitor sent JSONL to `codex app-server proxy`, but the proxy forwards raw bytes
+to the shared daemon control socket, which expects HTTP Upgrade and WebSocket
+frames. Only standalone `app-server --stdio` accepts JSONL. The original isolated
+smoke check did not exercise the production transport.
+
+Corrected the default RPC transport to perform WebSocket initialization over the
+proxy's stdin/stdout byte stream, using `ws` for handshake and framing. Standalone
+stdio remains explicit for the no-inference Codex lifecycle smoke check. Added one
+regression check that fails with the original JSONL transport and passes with the
+WebSocket transport, including a disconnect/reconnect cycle. It uses an in-memory
+HTTP Upgrade peer, without binding a port. `npm run check:connection` now checks
+the actual shared server separately, without submitting work.
+
+The running host dashboard needs a restart to load this backend correction.
+Current sandbox policy still prevents direct access to its shared socket.
+
+Correction checks: all nine focused tests, Vue/server type checks, the isolated
+real-Codex smoke check, and production build pass. The compiled CLI loads its
+WebSocket dependency and prints help successfully. After the requested host
+restart, the browser showed no HTTP listener at port 4317; startup output is
+needed before the live Codex connection can be confirmed. The computer-use
+tool blocks access to Terminal, so that output must come from the user.
+
+## Terminal handoff and trust correction
+
+The next host check created Miso successfully, but opening it in Terminal showed
+`This conversation is open in another app`. Codex's startup code excludes
+reasoning `-c` overrides from implicit daemon reuse. The launcher therefore
+started an embedded backend, which collided with the shared server's active
+conversation writer. This is a backend-selection conflict, not a reason to delete
+or fork the conversation or change its source metadata.
+
+An initial correction used explicit `--remote unix://`. The next host attempt
+failed with `remote project directory is inside an explicitly untrusted project`
+despite already supplying `--cd`. Source inspection pinned to the installed
+`rust-v0.163.0` tag confirms that explicit Unix endpoints use remote trust handling
+in that release. Newer main-branch source recognizes a verified local endpoint;
+relying on it was incorrect for the installed version.
+
+The current launcher uses `codex --enable daemon_auto_start resume <thread-id>
+--cd <project>`, with no remote/model/reasoning flags. New sessions already have
+their preset loaded by `thread/start`. On explicit Open terminal, Garden reads
+the session and restores the preset with `thread/resume` only if it is unloaded.
+It does not alter loaded/running sessions or resume as part of monitoring. Unloaded
+observations retain the last known preset rather than replacing it with defaults.
+Trust settings and conversation IDs are unchanged. Existing launchers regenerate
+on Open terminal after restarting Garden.
+
+Evidence: OpenAI's `rust-v0.163.0` source in
+`codex-rs/tui/src/daemon_startup.rs::config_exclusion`,
+`codex-rs/tui/src/startup_orchestration.rs`,
+`codex-rs/tui/src/config_update.rs::read_remote_project_trust`, and
+`codex-rs/tui/src/app_server_session.rs::thread_resume_params_from_config`.
+All ten focused checks, TypeScript checks and the production build pass; the npm
+archive was rebuilt. The real-Codex isolated smoke
+check passes cold restoration through Garden followed by override-free resume,
+including a non-default reasoning effort and zero submitted turns. Actual native
+terminal handoff still requires a host check because Terminal automation and the
+shared daemon socket are blocked in this agent environment.
+
+## Confirmed folder creation
+
+The creation dialog now checks the path on blur through a local read-only API.
+Missing paths reveal an unchecked confirmation; changing the path clears both
+the check result and consent. Stale asynchronous responses are ignored. Form
+submission also validates the path, covering Enter without an earlier blur.
+The server accepts only a boolean creation flag, rechecks the filesystem and
+creates missing parents before starting Codex. Existing folders follow the
+previous flow. No directory is created by checking the path or the checkbox.
+A new folder is retained if later session creation fails; no rollback deletes
+potential user files. Existing Codex permissions, trust and launch behavior stay
+unchanged.
+
+Evidence: all 13 focused checks, TypeScript checks, the production build and the
+isolated no-inference Codex smoke check pass. Three filesystem checks cover
+read-only existence checks, rejection without confirmation, recursive creation
+before session startup, and files/file parents. An in-memory HTTP handler probe
+verified the new route, strict boolean validation and local-request protection.
+The built Vue dialog was checked in Zen using a local preview with stubbed API
+responses: missing/existing/error states, checkbox gating, reset after editing,
+pending feedback, confirmed submission and desktop layout. Filesystem creation
+was verified independently against real temporary directories. The running host
+backend must restart and the browser reload to use this extension; full native
+terminal handoff remains a host check.
+
+## Built-in provider boundary and connection settings
+
+Garden now depends on `AgentProvider`, with Codex's transport, protocol, status
+mapping, model catalog and terminal-resume rules inside its adapter. A small
+factory registers built-in implementations. `ProviderId` is a closed union and
+creation requires an explicit provider, with runtime allowlist validation at API
+and persistence boundaries. Claude is reserved in the type only; no real Claude
+implementation or UI option is shipped. Backend configuration supplies each
+provider's default model and each model's reasoning options/default. Models with
+no reasoning choice use null. No dependency was added.
+
+Connections has a settings modal with persistent toggles. Disabling closes only
+Garden's monitoring transport, blocks creation/opening, keeps cards and last
+known status/timestamps, and does not issue cancellation or daemon-stop commands.
+Re-enabling reconnects and refreshes configuration and state. Providers have
+independent retry timing and failures. A generation check discards stale reads
+across a toggle; toggles cannot interrupt a session creation/terminal operation.
+
+Cards display provider labels. Each new card uses a Garden UUID and stores the
+provider's opaque native session ID separately. Terminal/protocol operations use
+the native ID through its owning adapter, while launcher filenames use the safe
+Garden ID. Equal native IDs from different providers remain distinct. Legacy
+version 1 Codex cards retain both their original card and native ID; mutations
+persist version 2 with connection settings. Read updates apply only to cards
+still tracked, avoiding re-adding a removed card from an in-flight poll.
+Search now also matches provider names and native session IDs. Actual discovery,
+Claude support and dedicated created/discovered filters remain the next task.
+
+Verification: all 16 focused checks, Vue/server type checks, clean production
+build, and real-Codex no-inference smoke check pass. Three new checks exercise
+per-provider configuration and exact routing with equal native IDs, failure
+isolation, persisted toggles and in-flight invalidation, and legacy identity
+migration. Existing shell quoting checks now include opaque native IDs. An
+in-memory HTTP probe confirms local-request protections, strict toggle booleans,
+unknown/unregistered/missing-provider rejection, null reasoning, and exact saved
+session opening. Browser QA of the built UI used two stub providers on desktop
+and at a 390px viewport: provider labels, models/optional reasoning, creation
+payload, independently toggled connections, all-paused state, and re-enabling.
+These fake-provider checks establish the common boundary, not actual Claude
+integration. Native terminal launch and the host daemon remain inaccessible to
+this session, so the running host must restart and reload for the final check.
+
+The user confirmed creating the requested baseline commit before this refactor.
+Git metadata remains unavailable in this session (`not a git repository`, no
+visible `.git`), so its hash/branch could not be verified and these refactor edits
+could not be committed here. The refactor proceeded on the user's confirmation.
+SonarQube remains unavailable. Provider commands are unchanged from the verified
+Codex launch correction; actual host terminal attachment remains a limitation.
+
+Deviation from initial plan: the approved provider refactor now includes the
+requested connection settings and provider-aware creation UI, with a closed
+provider type instead of arbitrary provider IDs. Builds clear generated output
+before compiling so moved Codex modules do not leave stale packaged code.
+
+## Agent Garden, dormant Claude, and subagent dialogs
+
+The following user requests are cumulative: real Claude adapter, provider logos,
+multi-select provider filters, full-project grouping toggle, Agent Garden rename,
+waiting/finished highlights, and subagent visibility. Subsequent explicit steering
+keeps Claude's code but sets its backend `enabled` flag false because the host
+attempt failed on subscription access. Subagents now open in a dialog, replacing
+the initial inline disclosure. External top-level discovery remains a follow-up.
+
+| Requirement | Implemented behavior and observed evidence |
+| --- | --- |
+| Claude adapter and backend catalog | Installed Claude Code 2.1.292 supplies five models through an initialize-only control request, including model-specific effort support and Haiku with no effort choice. Installed-CLI smoke check sends no user messages or inference. Tests exercise reserved UUID creation, exact-ID first launch/resume, background job attachment, and focusing/refusing a competing interactive writer. The host reported subscription failure; paid-task and native-terminal success are not established. |
+| Backend availability flag | `AgentProvider.enabled` is checked before registration or connection. Codex is true; Claude is false. Disabled providers, cards, settings and creation options disappear, while storage retains native IDs and presets. A regression check verifies zero connection attempts, API-access rejection, and identities reappearing after re-enabling the backend flag. UI connection preferences cannot override it. |
+| Logos and filtering | Local ChatGPT knot / Claude starburst SVGs replace provider text chips, with accessible labels and bundled licensing. Both checked provider filters use OR and combine with status/search. Browser preview with explicitly simulated enabled providers showed 8/8 loaded logos and Claude-only results after deselecting Codex. Pure checks cover both/one/neither selections, search/native IDs and status. Production currently exposes only Codex. |
+| Project grouping | The toggle groups filtered parent cards by the exact saved project path. Browser preview keeps `/work/app` and `/other/app` separate even though both are named app. Tests cover full-path grouping and order preservation. |
+| Rename and persistence | App title/branding, RPC client identity, package, executable and archive use Agent Garden / `agent-garden`. New data uses Agent Garden. Existing Codex Garden metadata is reused in place to avoid losing IDs or racing an old process. A filesystem check covers fresh, legacy, new-metadata and explicit-directory cases. The repository folder itself is unchanged. |
+| Attention highlights | Fresh waiting parents/workers receive amber text/border highlights; completed parent responses and workers receive green highlights. Parent attention prioritizes a waiting worker. Stale cards retain explicit last-known treatment. Browser previews show all states; overview input count includes parents with waiting workers. |
+| Subagents | Codex reads descendant threads with native lineage filters, pagination and both archive states; local lineage checks exclude unrelated sessions. No resume/load/write calls occur during observation. Claude captures session-local lifecycle/tool events, including reactivation of the same native ID and in-process teammates. Tests execute the actual generated hook, covering start, waiting, tool completion, stop, failure, stale reads, unsafe IDs and exclusion of internal-only Stop events. Persistence tests retain worker IDs but mark them stale after restart; toggles also stale worker observations. |
+| Subagent dialog | Cards keep compact count/attention buttons. The modal shows worker names, native IDs, task/recent activity, projects, available model, status/time and nested Codex relationships. Native dialog focus and Escape closing were checked in Chrome. Desktop and 390px iframe previews fit the dialog and preserve dashboard layout, with no horizontal overflow. Per-component accessible heading IDs avoid collisions between equal native IDs from different providers. Responding uses the parent terminal. |
+
+Final local evidence: all **25** focused checks pass; Vue/server type checks and
+clean production build pass. Isolated real-Codex smoke passes, including the new
+descendant-list query with no children/errors, preset restoration and no submitted
+turns. The explicit dormant-Claude developer smoke passes model discovery and
+exact-ID preset routing without inference; it does not enable Claude in Garden.
+The compiled CLI prints Agent Garden help. `npm pack` succeeds with a writable
+temporary cache (the default user cache is blocked by this sandbox). Archive
+contents include both retained adapters, descendant support and local logo assets.
+
+Browser QA uses the built Vue bundle and stub state, independently of real backend
+checks. It confirms modal rendering, worker lineage/IDs, attention highlights,
+provider filtering with grouping, logo loading, Escape dismissal and 390px layout.
+The running host was observed serving Agent Garden and connected providers before
+the kill switch; it must restart to load the final disabled-Claude backend. The
+last UI change only replaces disclosure with a native dialog and keeps the same
+worker observation contract.
+
+Remaining limits: no live inference swarm was started for verification. Native
+terminal launch and focus are unavailable through this session's computer tool,
+and direct host shared-daemon/socket access is sandboxed. Separate-process Claude
+teams are not discovered, and Claude worker status denotes the last observed hook
+event. Existing Claude sessions would need reopening to load new hooks when the
+adapter is enabled again. Worker lists cap at 200 with visible truncation. No
+session stealing, approval response, automatic backgrounding or task submission
+was added. SonarQube is unavailable. Git still reports `not a git repository` in
+this tool environment, so no commit/hash can be produced here; the user's earlier
+baseline-commit confirmation remains the authority for proceeding.
+
+Deviation from initial plan: cumulative UI/rename/subagent requests were included;
+Claude is retained behind a disabled backend flag after the user's subscription
+check, and worker details use a dialog at the user's request.
+
+### Final availability and modal refinements
+
+Later steering keeps dormant integrations visible only in Connections. Provider
+snapshots now distinguish backend `available` from the runtime connection
+`enabled` preference. Claude is `available: false`, `enabled: false`, disconnected,
+with null configuration and no error/retry. Its cards, filter and creation option
+are hidden. Connections shows its logo/name, **Off · Unavailable**, and a disabled
+switch. Backend operations still reject attempts to enable, open or create it;
+all saved native IDs and presets remain. The availability regression check was
+updated to assert this catalog entry alongside zero connection attempts, blocked
+access and identity restoration after re-enabling the backend implementation.
+This supersedes the earlier note that Connections hides Claude altogether.
+
+All native dialogs now prevent parent-page scrolling through the shared
+`html/body:has(dialog[open])` rule. Dialog contents retain their own bounded
+scrolling and contain scroll chaining. No JavaScript scroll-position bookkeeping
+or extra dependency was introduced. In the built-browser preview, creation listed
+only Codex; Connections showed Claude Off with a disabled switch. Creation,
+Connections and worker dialogs reported root/body overflow hidden. A background
+scroll attempt while the worker dialog was open left its parent at **222px →
+222px**. Closing by Escape restores the ordinary page selector state.
+
+All 25 focused checks, type checks and the final clean build pass. The package is
+rebuilt as `agent-garden-0.1.0.tgz`. Browser checks use stub snapshots; active Codex
+integration uses the separate no-inference CLI smoke. The final change retains
+all previously delivered creation, persistence, status and terminal routing work.

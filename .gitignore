@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.tgz
+coverage/
+*.tsbuildinfo
+test-results/
+playwright-report/
+.garden-data/
+.env
+.env.*
+!.env.example
+*.log
+.idea/
+.vscode/
+.DS_Store

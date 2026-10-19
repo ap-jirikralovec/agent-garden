@@ -23,7 +23,7 @@ docs/delivery.md before changing session behavior.
   Monitoring uses read methods, not thread/resume; observing must not alter work.
 - Codex terminal launchers use normal local resume with `--enable daemon_auto_start`,
   without `--remote`, model or reasoning overrides. In Codex 0.163.0, `--remote
-  unix://` applies remote trust checks, while reasoning `-c` disables daemon reuse.
+unix://` applies remote trust checks, while reasoning `-c` disables daemon reuse.
   Restore an unloaded preset through the server only on explicit Open terminal;
   leave loaded sessions alone. Check integration source against the installed tag.
 - Claude uses `agents --json --all` for structured status and init-only control
@@ -41,6 +41,12 @@ docs/delivery.md before changing session behavior.
 - Shell arguments must be quoted; project paths and agent names are untrusted input.
   Keep the HTTP service on loopback and retain same-origin request checks.
 - Keep dependencies, tests and abstractions proportional to this small local app.
+  The frontend uses Pinia for shared snapshots/connection state. App owns SSE,
+  fallback polling and refresh; gardens consume the store. Keep form and view
+  state local. Dashboard code lives under `src/client/gardens/dashboard`.
+  Use scoped SCSS and shared style tokens; see `docs/frontend.md` for ownership.
+  Run `npm run lint` and `npm run format:check` before delivery. Keep the committed
+  workspace format/fix-on-save settings enabled.
   Use npm test, npm run type-check, npm run build, and the no-inference
   npm run check:codex smoke check when touching Codex; use npm run check:claude
   for Claude. These submit no tasks or inference.

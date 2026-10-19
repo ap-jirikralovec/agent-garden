@@ -1,9 +1,9 @@
 export type AgentStatus = 'working' | 'waiting' | 'finished' | 'failed' | 'idle';
 export type Connection = 'connected' | 'disconnected';
 const providerIds = ['codex', 'claude'] as const;
-export type ProviderId = typeof providerIds[number];
+export type ProviderId = (typeof providerIds)[number];
 export function isProviderId(value: unknown): value is ProviderId {
-  return providerIds.some(id => id === value);
+  return providerIds.some((id) => id === value);
 }
 
 export interface AgentWorker {
@@ -81,5 +81,9 @@ export interface ProjectCheck {
 }
 
 export const statusLabels: Record<AgentStatus, string> = {
-  working: 'Working', waiting: 'Waiting for input', finished: 'Finished', failed: 'Failed', idle: 'Idle',
+  working: 'Working',
+  waiting: 'Waiting for input',
+  finished: 'Finished',
+  failed: 'Failed',
+  idle: 'Idle',
 };

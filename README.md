@@ -89,14 +89,14 @@ and [hooks reference](https://code.claude.com/docs/en/hooks).
 
 ## States and connections
 
-| State | Meaning |
-| --- | --- |
-| Idle | Ready for the first task. |
-| Working | The provider reports active work. |
-| Waiting for input | A structured input/approval request needs you in the terminal. |
-| Finished | The latest response finished; this does not establish success of the whole task. |
-| Failed | The provider reported failure or interruption. |
-| Disconnected | Garden cannot verify current runtime state; last state and last-seen time remain. |
+| State             | Meaning                                                                           |
+| ----------------- | --------------------------------------------------------------------------------- |
+| Idle              | Ready for the first task.                                                         |
+| Working           | The provider reports active work.                                                 |
+| Waiting for input | A structured input/approval request needs you in the terminal.                    |
+| Finished          | The latest response finished; this does not establish success of the whole task.  |
+| Failed            | The provider reported failure or interruption.                                    |
+| Disconnected      | Garden cannot verify current runtime state; last state and last-seen time remain. |
 
 Garden does not infer questions or success from prose. Polling refreshes every
 two seconds, with connection retry backoff up to 15 seconds. Closed Claude
@@ -153,9 +153,16 @@ rather than invented state.
 
 ## Checks and packaging
 
+Frontend ownership and editor setup are documented in
+[frontend architecture](docs/frontend.md). The app shell owns SSE updates with a
+five-second browser polling fallback, and Pinia shares state with the dashboard
+garden. Styles use SCSS with shared tokens and component-scoped rules.
+
 ```sh
 npm test                 # focused status, filtering, persistence and routing checks
 npm run type-check
+npm run lint
+npm run format:check
 npm run check:codex      # isolated installed-Codex check, no task/inference
 npm run check:claude     # explicit developer probe of dormant Claude; no task/inference
 npm run check:connection # read-only check of the actual shared Codex connection

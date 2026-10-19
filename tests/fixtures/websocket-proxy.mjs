@@ -6,11 +6,16 @@ import { WebSocketServer } from 'ws';
 const http = createServer();
 const websocket = new WebSocketServer({ noServer: true });
 http.on('upgrade', (request, socket, head) => {
-  websocket.handleUpgrade(request, socket, head, client => {
-    client.on('message', raw => {
+  websocket.handleUpgrade(request, socket, head, (client) => {
+    client.on('message', (raw) => {
       const message = JSON.parse(raw.toString());
       if (message.id === undefined) return;
-      client.send(JSON.stringify({ id: message.id, result: message.method === 'model/list' ? { data: [] } : {} }));
+      client.send(
+        JSON.stringify({
+          id: message.id,
+          result: message.method === 'model/list' ? { data: [] } : {},
+        }),
+      );
     });
   });
 });

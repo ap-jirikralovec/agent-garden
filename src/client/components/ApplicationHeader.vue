@@ -1,0 +1,137 @@
+<script setup lang="ts">
+import { ref } from 'vue';
+import { storeToRefs } from 'pinia';
+import { useGardenStore } from '../stores/garden';
+import ConnectionsDialog from './ConnectionsDialog.vue';
+const { browserConnected, connectedCount, connectionsEnabled } = storeToRefs(useGardenStore());
+const connections = ref<InstanceType<typeof ConnectionsDialog>>();
+</script>
+
+<template>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Agent Garden home">
+      <span class="brand-mark" aria-hidden="true"
+        ><svg viewBox="0 0 32 32" fill="none">
+          <path
+            d="M16 26V15M16 20C7 20 5 13 6 7c7 0 11 4 10 13ZM16 16C16 8 21 5 27 6c0 7-4 11-11 10Z"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          /></svg
+      ></span>
+      <span>agent<span class="brand-light">garden</span><small>LOCAL WORKSPACE</small></span>
+    </a>
+    <div class="header-actions">
+      <button class="secondary settings-button" @click="connections?.open()">⚙ Connections</button
+      ><span class="local-tag"
+        ><span class="dot" :class="browserConnected && connectedCount ? 'green' : 'amber'"></span
+        >{{
+          !browserConnected
+            ? 'Dashboard offline'
+            : !connectionsEnabled
+              ? 'Connections paused'
+              : `${connectedCount} connected`
+        }}</span
+      >
+    </div>
+  </header>
+  <ConnectionsDialog ref="connections" />
+</template>
+
+<style scoped lang="scss">
+@use '../styles/tokens' as tokens;
+.topbar {
+  height: 112px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--color-border);
+}
+.brand {
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 23px;
+  font-weight: 720;
+  letter-spacing: -1px;
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  color: #fafbf5;
+  background: var(--color-primary);
+}
+.brand-mark svg {
+  width: 31px;
+}
+.brand-light {
+  font-weight: 430;
+  color: #74866e;
+}
+.brand small {
+  display: block;
+  font-size: 8px;
+  letter-spacing: 2.2px;
+  font-weight: 650;
+  color: #828d7e;
+  margin-top: var(--space-1);
+}
+.local-tag {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: #63725f;
+  background: #edf1e7;
+  border: 1px solid #e0e7d6;
+  border-radius: 30px;
+  padding: 9px 13px;
+}
+@include tokens.mobile {
+  .topbar {
+    height: 88px;
+  }
+  .brand {
+    font-size: 20px;
+  }
+  .brand-mark {
+    width: 40px;
+    height: 40px;
+  }
+  .local-tag {
+    font-size: 0;
+    padding: 9px;
+  }
+  .local-tag .dot {
+    width: 7px;
+    height: 7px;
+  }
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.settings-button {
+  min-height: 35px;
+  padding: var(--space-2) var(--space-3);
+  font-size: 12px;
+}
+@include tokens.mobile {
+  .header-actions {
+    gap: 7px;
+  }
+  .settings-button {
+    font-size: 10px;
+    padding: var(--space-2);
+  }
+  .header-actions .local-tag {
+    display: none;
+  }
+}
+</style>

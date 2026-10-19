@@ -3,10 +3,25 @@ import { join } from 'node:path';
 import type { AgentWorker } from '../../../shared/types.js';
 import { shellQuote } from '../../terminal.js';
 
-export const observationEvents = ['SessionStart', 'UserPromptSubmit', 'Stop', 'StopFailure', 'SessionEnd'] as const;
-const workerEvents = ['SubagentStart', 'SubagentStop', 'PermissionRequest', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'StopFailure', 'TeammateIdle'] as const;
+export const observationEvents = [
+  'SessionStart',
+  'UserPromptSubmit',
+  'Stop',
+  'StopFailure',
+  'SessionEnd',
+] as const;
+const workerEvents = [
+  'SubagentStart',
+  'SubagentStop',
+  'PermissionRequest',
+  'PreToolUse',
+  'PostToolUse',
+  'PostToolUseFailure',
+  'StopFailure',
+  'TeammateIdle',
+] as const;
 export interface ClaudeEvent {
-  event: typeof observationEvents[number];
+  event: (typeof observationEvents)[number];
   at: string;
   project?: string;
   model?: string;
@@ -69,33 +84,57 @@ export class ClaudeObservations {
     await writeFile(script, hookSource, { mode: 0o600 });
     const command = [process.execPath, script, directory, sessionId].map(shellQuote).join(' ');
     const settings = join(directory, 'settings.json');
-    await writeFile(settings, JSON.stringify({ defaultToAgentsView: false, hooks: Object.fromEntries([...new Set([...observationEvents, ...workerEvents])].map(event => [event, [{ hooks: [{ type: 'command', command, timeout: 3 }] }]])) }), { mode: 0o600 });
+    await writeFile(
+      settings,
+      JSON.stringify({
+        defaultToAgentsView: false,
+        hooks: Object.fromEntries(
+          [...new Set([...observationEvents, ...workerEvents])].map((event) => [
+            event,
+            [{ hooks: [{ type: 'command', command, timeout: 3 }] }],
+          ]),
+        ),
+      }),
+      { mode: 0o600 },
+    );
     return settings;
   }
 
   async read(sessionId: string): Promise<ClaudeEvent[]> {
     const directory = this.sessionDirectory(sessionId);
-    const events = await Promise.all(observationEvents.map(async event => {
-      try {
-        const result = JSON.parse(await readFile(join(directory, `${event}.json`), 'utf8')) as ClaudeEvent;
-        if (result.event !== event || !Number.isFinite(Date.parse(result.at))
-          || [result.project, result.model, result.task, result.transcript].some(value => value !== undefined && typeof value !== 'string')) {
-          throw new Error('Invalid Claude observation.');
+    const events = await Promise.all(
+      observationEvents.map(async (event) => {
+        try {
+          const result = JSON.parse(
+            await readFile(join(directory, `${event}.json`), 'utf8'),
+          ) as ClaudeEvent;
+          if (
+            result.event !== event ||
+            !Number.isFinite(Date.parse(result.at)) ||
+            [result.project, result.model, result.task, result.transcript].some(
+              (value) => value !== undefined && typeof value !== 'string',
+            )
+          ) {
+            throw new Error('Invalid Claude observation.');
+          }
+          return result;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+          throw error;
         }
-        return result;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-        throw error;
-      }
-    }));
-    return events.filter((event): event is ClaudeEvent => event !== null).sort((a, b) => a.at.localeCompare(b.at));
+      }),
+    );
+    return events
+      .filter((event): event is ClaudeEvent => event !== null)
+      .sort((a, b) => a.at.localeCompare(b.at));
   }
 
   async workers(sessionId: string, parentLive: boolean, previous: AgentWorker[]) {
     const directory = join(this.sessionDirectory(sessionId), 'workers');
     let ids: string[];
-    try { ids = (await readdir(directory)).filter(id => /^[a-z0-9_-]{1,160}$/i.test(id)); }
-    catch (error) {
+    try {
+      ids = (await readdir(directory)).filter((id) => /^[a-z0-9_-]{1,160}$/i.test(id));
+    } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       ids = [];
     }
@@ -105,30 +144,48 @@ export class ClaudeObservations {
       for (const name of workerEvents) {
         try {
           const event = JSON.parse(await readFile(join(directory, id, `${name}.json`), 'utf8'));
-          if (event.agentId !== id || !Number.isFinite(Date.parse(event.at))
-            || !['working', 'waiting', 'finished', 'failed'].includes(event.status)
-            || [event.name, event.task, event.project].some(value => value !== undefined && typeof value !== 'string')) throw new Error('Invalid worker observation.');
+          if (
+            event.agentId !== id ||
+            !Number.isFinite(Date.parse(event.at)) ||
+            !['working', 'waiting', 'finished', 'failed'].includes(event.status) ||
+            [event.name, event.task, event.project].some(
+              (value) => value !== undefined && typeof value !== 'string',
+            )
+          )
+            throw new Error('Invalid worker observation.');
           events.push(event);
-        } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
       }
       events.sort((a, b) => a.at.localeCompare(b.at));
       // Ignore Claude's internal side agents that only emit a Stop event.
-      if (!events.some(event => event.event === 'SubagentStart')) continue;
+      if (!events.some((event) => event.event === 'SubagentStart')) continue;
       const latest = events.at(-1)!;
-      const old = previous.find(worker => worker.id === id);
+      const old = previous.find((worker) => worker.id === id);
       workers.push({
-        id, parentSessionId: sessionId, name: events.find(event => event.name)?.name || `Worker ${id}`,
-        project: latest.project ?? old?.project ?? '', model: null,
-        task: [...events].reverse().find(event => event.task)?.task ?? old?.task ?? '',
-        status: latest.status, connection: parentLive ? 'connected' : 'disconnected', lastSeen: latest.at,
-        detail: parentLive ? 'Last observed Claude lifecycle event. Respond through the parent terminal.' : 'Parent session is not running; last observed worker state is retained.',
+        id,
+        parentSessionId: sessionId,
+        name: events.find((event) => event.name)?.name || `Worker ${id}`,
+        project: latest.project ?? old?.project ?? '',
+        model: null,
+        task: [...events].reverse().find((event) => event.task)?.task ?? old?.task ?? '',
+        status: latest.status,
+        connection: parentLive ? 'connected' : 'disconnected',
+        lastSeen: latest.at,
+        detail: parentLive
+          ? 'Last observed Claude lifecycle event. Respond through the parent terminal.'
+          : 'Parent session is not running; last observed worker state is retained.',
       });
     }
     for (const old of previous) {
       if (workers.length >= 200) break;
-      if (!workers.some(worker => worker.id === old.id)) workers.push({ ...old, connection: 'disconnected' });
+      if (!workers.some((worker) => worker.id === old.id))
+        workers.push({ ...old, connection: 'disconnected' });
     }
-    return { workers, workersError: ids.length > 200 ? 'Showing the first 200 observed workers.' : null };
+    return {
+      workers,
+      workersError: ids.length > 200 ? 'Showing the first 200 observed workers.' : null,
+    };
   }
-
 }

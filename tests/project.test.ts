@@ -15,7 +15,9 @@ async function folder() {
   folders.push(path);
   return path;
 }
-afterEach(async () => { await Promise.all(folders.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
+afterEach(async () => {
+  await Promise.all(folders.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+});
 
 it('checks existing and missing folders without creating anything', async () => {
   const directory = await folder();
@@ -34,23 +36,46 @@ it('requires confirmation and creates missing parents before starting the sessio
   const started: string[] = [];
   const opened: string[] = [];
   const rpc: Rpc = {
-    connected: true, async connect() {}, async close() {},
+    connected: true,
+    async connect() {},
+    async close() {},
     async request<T>(method: string, params: Record<string, unknown>): Promise<T> {
-      if (method === 'model/list') return { data: [{
-        model: 'test-model', supportedReasoningEfforts: [{ reasoningEffort: 'medium' }],
-      }] } as T;
+      if (method === 'model/list')
+        return {
+          data: [
+            {
+              model: 'test-model',
+              supportedReasoningEfforts: [{ reasoningEffort: 'medium' }],
+            },
+          ],
+        } as T;
       if (method === 'thread/start') {
         expect(await realpath(project)).toBe(params.cwd);
         started.push(params.cwd as string);
         return { thread: { id: randomUUID() } } as T;
       }
-      if (method === 'thread/read') return { thread: { id: params.threadId, status: { type: 'idle' }, cwd: project, preview: '' } } as T;
+      if (method === 'thread/read')
+        return {
+          thread: { id: params.threadId, status: { type: 'idle' }, cwd: project, preview: '' },
+        } as T;
       return {} as T;
     },
   };
-  const garden = new Garden(store, [new CodexProvider(rpc, { async open(id) { opened.push(id); } })]);
+  const garden = new Garden(store, [
+    new CodexProvider(rpc, {
+      async open(id) {
+        opened.push(id);
+      },
+    }),
+  ]);
   await garden.refresh();
-  const input = { provider: 'codex' as const, name: 'Miso', project, model: 'test-model', reasoning: 'medium' };
+  const input = {
+    provider: 'codex' as const,
+    name: 'Miso',
+    project,
+    model: 'test-model',
+    reasoning: 'medium',
+  };
   await expect(garden.create(input)).rejects.toThrow('Confirm creation');
   await expect(access(project)).rejects.toMatchObject({ code: 'ENOENT' });
   expect(started).toEqual([]);

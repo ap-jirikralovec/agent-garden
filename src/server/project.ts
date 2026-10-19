@@ -6,6 +6,7 @@ import type { ProjectCheck } from '../shared/types.js';
 export async function checkProject(value: string): Promise<ProjectCheck> {
   let path = value.trim();
   if (path.startsWith('~/')) path = resolve(homedir(), path.slice(2));
+  // eslint-disable-next-line no-control-regex -- Control characters are invalid project input.
   if (!isAbsolute(path) || path.length > 4096 || /[\x00-\x1f]/.test(path)) {
     throw new Error('Enter an absolute project folder, such as /Users/you/projects/app.');
   }
@@ -23,10 +24,17 @@ export async function checkProject(value: string): Promise<ProjectCheck> {
 export async function prepareProject(value: string, confirmed: boolean): Promise<string> {
   const project = await checkProject(value);
   if (project.exists) return project.path;
-  if (!confirmed) throw new Error('Project folder does not exist. Confirm creation of the new folder before continuing.');
-  try { await mkdir(project.path, { recursive: true }); }
-  catch { throw new Error('Could not create the project folder. Check the path and permissions.'); }
+  if (!confirmed)
+    throw new Error(
+      'Project folder does not exist. Confirm creation of the new folder before continuing.',
+    );
+  try {
+    await mkdir(project.path, { recursive: true });
+  } catch {
+    throw new Error('Could not create the project folder. Check the path and permissions.');
+  }
   const created = await checkProject(project.path);
-  if (!created.exists) throw new Error('Project folder could not be found after creation. Please try again.');
+  if (!created.exists)
+    throw new Error('Project folder could not be found after creation. Please try again.');
   return created.path;
 }

@@ -1,0 +1,39 @@
+// Shared palette and responsive boundaries. Component-specific details stay local.
+@mixin theme {
+  --color-text: #26372e;
+  --color-primary: #315b43;
+  --color-muted: #788279;
+  --color-border: #e0e5da;
+  --color-background: #f6f7f2;
+  --color-surface: #fff;
+  --color-focus: #7ea68a;
+  --color-danger: #a15c4b;
+  --color-warning: #8c661f;
+  --color-success: #4e743e;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --radius-control: 8px;
+  --radius-card: 14px;
+}
+
+@mixin mobile {
+  @media (max-width: 720px) {
+    @content;
+  }
+}
+
+@mixin tablet {
+  @media (max-width: 1100px) {
+    @content;
+  }
+}
+
+@mixin wide {
+  @media (min-width: 1600px) {
+    @content;
+  }
+}

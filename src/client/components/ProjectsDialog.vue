@@ -85,7 +85,7 @@ defineExpose({ open });
     <h2 id="projects-title">Your projects.</h2>
     <p class="dialog-intro">A home for your ideas, with or without agents.</p>
     <button class="secondary add-project" :disabled="busy || !browserConnected" @click="add">
-      {{ picking ? 'Choose a folder on your Mac…' : '＋ Add project' }}
+      {{ picking ? 'Choose a project folder…' : '＋ Add project' }}
     </button>
     <p class="picker-hint">Select a folder, or use New Folder in the picker to create one.</p>
     <p v-if="!snapshot.projects.length" class="no-projects">No saved projects yet.</p>
@@ -140,7 +140,7 @@ defineExpose({ open });
                 :title="
                   agentCount(project.path)
                     ? 'Remove its agents from Garden first'
-                    : 'Remove from Garden; the folder stays on your Mac'
+                    : 'Remove from Garden; the folder stays on your computer'
                 "
                 @click="remove(project.path)"
               >
@@ -153,7 +153,7 @@ defineExpose({ open });
     </ul>
     <p class="dialog-note">
       Remove agents from Garden before removing their project. Your folders and files stay on your
-      Mac.
+      computer.
     </p>
     <p v-if="error" class="form-error" role="alert">{{ error }}</p>
     <div class="dialog-footer">

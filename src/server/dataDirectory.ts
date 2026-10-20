@@ -1,6 +1,7 @@
 import { access } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, posix, resolve, win32 } from 'node:path';
+import { hostPlatform, type HostPlatform } from './platform.js';
 
 async function hasMetadata(directory: string) {
   try {
@@ -12,9 +13,27 @@ async function hasMetadata(directory: string) {
   }
 }
 
-export async function dataDirectory(explicit?: string, home = homedir()) {
+export async function dataDirectory(
+  explicit?: string,
+  home = homedir(),
+  platform: HostPlatform = hostPlatform(),
+  env: NodeJS.ProcessEnv = process.env,
+) {
   if (explicit) return resolve(explicit);
-  const parent = join(home, 'Library', 'Application Support');
+  if (platform === 'windows') {
+    if (!env.LOCALAPPDATA || !win32.isAbsolute(env.LOCALAPPDATA))
+      throw new Error('LOCALAPPDATA is unavailable. Set --data-dir to an absolute folder.');
+    return win32.join(env.LOCALAPPDATA, 'Agent Garden');
+  }
+  if (platform === 'wsl') {
+    const parent =
+      env.XDG_DATA_HOME && posix.isAbsolute(env.XDG_DATA_HOME)
+        ? env.XDG_DATA_HOME
+        : posix.join(home, '.local', 'share');
+    return posix.join(parent, 'Agent Garden');
+  }
+  if (platform === 'unsupported') throw new Error('Agent Garden requires macOS, WSL2, or Windows.');
+  const parent = posix.join(home, 'Library', 'Application Support');
   const current = join(parent, 'Agent Garden');
   const legacy = join(parent, 'Codex Garden');
   // Reuse legacy metadata in place: moving it could race a still-running Garden.

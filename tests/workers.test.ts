@@ -113,7 +113,7 @@ it('observes Claude worker identity, waiting, completion and reactivation withou
   const emit = async (hook_event_name: string, extra: Record<string, unknown> = {}) => {
     const command = settings.hooks[hook_event_name][0].hooks[0].command;
     await new Promise<void>((resolve, reject) => {
-      const child = execFile('/bin/zsh', ['-c', command], (error, stdout) => {
+      const child = execFile('/bin/sh', ['-c', command], (error, stdout) => {
         if (error) reject(error);
         else {
           expect(stdout).toBe('');

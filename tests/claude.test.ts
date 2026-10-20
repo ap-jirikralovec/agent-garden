@@ -160,7 +160,7 @@ it('opens the exact reserved UUID, focuses live interactive sessions, attaches b
     cwd: directory,
   };
   const result = await new Promise<{ stdout: string; code: number | null }>((resolve, reject) => {
-    const child = execFile('/bin/zsh', ['-c', hook], (error, stdout) =>
+    const child = execFile('/bin/sh', ['-c', hook], (error, stdout) =>
       error ? reject(error) : resolve({ stdout, code: child.exitCode }),
     );
     child.stdin!.end(JSON.stringify(event));
@@ -181,7 +181,7 @@ it('quotes Claude arguments and refuses to launch when the project directory is 
   const directory = await mkdtemp(join(tmpdir(), 'garden-claude-'));
   folders.push(directory);
   const agent = { ...makeAgent(), project: directory, name: "it's $(printf INJECTED)" };
-  const { stdout } = await execute('/bin/zsh', [
+  const { stdout } = await execute('/bin/sh', [
     '-c',
     launchScript(claudeCommand(agent, "/tmp/settings ' $().json", false, '/bin/echo')),
   ]);
@@ -189,7 +189,7 @@ it('quotes Claude arguments and refuses to launch when the project directory is 
   expect(stdout).toContain(agent.sessionId);
   expect(stdout).not.toContain('--dangerously-skip-permissions');
   await expect(
-    execute('/bin/zsh', [
+    execute('/bin/sh', [
       '-c',
       launchScript({
         executable: '/bin/echo',
@@ -205,12 +205,12 @@ it('keeps existing cards through the Agent Garden rename and honors an explicit 
   folders.push(home);
   const current = join(home, 'Library', 'Application Support', 'Agent Garden');
   const legacy = join(home, 'Library', 'Application Support', 'Codex Garden');
-  expect(await dataDirectory(undefined, home)).toBe(current);
+  expect(await dataDirectory(undefined, home, 'macos')).toBe(current);
   await mkdir(legacy, { recursive: true });
   await writeFile(join(legacy, 'agents.json'), '{}');
-  expect(await dataDirectory(undefined, home)).toBe(legacy);
+  expect(await dataDirectory(undefined, home, 'macos')).toBe(legacy);
   await mkdir(current, { recursive: true });
   await writeFile(join(current, 'agents.json'), '{}');
-  expect(await dataDirectory(undefined, home)).toBe(current);
+  expect(await dataDirectory(undefined, home, 'macos')).toBe(current);
   expect(await dataDirectory('/tmp/custom-garden', home)).toBe('/tmp/custom-garden');
 });

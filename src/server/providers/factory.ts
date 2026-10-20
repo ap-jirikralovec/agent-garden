@@ -9,17 +9,24 @@ import { ClaudeCli } from './claude/cli.js';
 import { ClaudeObservations } from './claude/observation.js';
 import type { AgentProvider } from './provider.js';
 
+export function executableCandidates(name: string, platform = process.platform): string[] {
+  return platform === 'win32' ? [`${name}.exe`] : [name];
+}
+
 async function findExecutable(name: string) {
+  const candidates = executableCandidates(name);
   for (const directory of (process.env.PATH ?? '').split(delimiter)) {
-    const path = join(directory, name);
-    try {
-      await access(path, constants.X_OK);
-      return await realpath(path);
-    } catch {
-      /* Continue searching PATH. */
+    for (const candidate of candidates) {
+      const path = join(directory, candidate);
+      try {
+        await access(path, constants.X_OK);
+        return await realpath(path);
+      } catch {
+        /* Continue searching PATH. */
+      }
     }
   }
-  return name;
+  return candidates[0];
 }
 
 export async function createProviders(directory: string): Promise<AgentProvider[]> {

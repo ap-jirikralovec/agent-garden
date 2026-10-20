@@ -10,14 +10,14 @@ it('uses a native folder-only panel with New Folder and distinguishes selection 
   native.run.mockImplementation((_command, _args, _options, done) =>
     done(null, { stdout: "/tmp/it's a project \n" }),
   );
-  expect(await pickProjectFolder()).toBe("/tmp/it's a project ");
+  expect(await pickProjectFolder('macos')).toBe("/tmp/it's a project ");
   const [command, args] = native.run.mock.calls[0];
   expect(command).toBe('/usr/bin/osascript');
   expect(args.slice(0, 3)).toEqual(['-l', 'JavaScript', '-e']);
   expect(args[3]).toContain('panel.canCreateDirectories = true');
   expect(args[3]).toContain('panel.canChooseFiles = false');
   native.run.mockImplementation((_command, _args, _options, done) => done(null, { stdout: '\n' }));
-  expect(await pickProjectFolder()).toBeNull();
+  expect(await pickProjectFolder('macos')).toBeNull();
 });
 
 it('blocks overlapping pickers and releases the lock on failure', async () => {
@@ -25,10 +25,10 @@ it('blocks overlapping pickers and releases the lock on failure', async () => {
   native.run.mockImplementation((_command, _args, _options, done) => {
     finish = done;
   });
-  const pending = pickProjectFolder();
-  await expect(pickProjectFolder()).rejects.toThrow('already open');
+  const pending = pickProjectFolder('macos');
+  await expect(pickProjectFolder('macos')).rejects.toThrow('already open');
   finish(new Error('Panel failed'));
   await expect(pending).rejects.toThrow('Could not select');
   native.run.mockImplementation((_command, _args, _options, done) => done(null, { stdout: '\n' }));
-  expect(await pickProjectFolder()).toBeNull();
+  expect(await pickProjectFolder('macos')).toBeNull();
 });

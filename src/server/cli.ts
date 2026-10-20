@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
 import { AgentStore } from './store.js';
 import { createProviders } from './providers/factory.js';
 import { Garden } from './garden.js';
 import { createApp } from './app.js';
 import { dataDirectory } from './dataDirectory.js';
+import { hostPlatform, openBrowser } from './platform.js';
 
 const { values } = parseArgs({
   options: {
@@ -19,7 +19,7 @@ const { values } = parseArgs({
 });
 if (values.help) {
   console.log(
-    'Agent Garden\n\nUsage: agent-garden [--port 4317] [--no-open] [--data-dir PATH]\n\nRequires macOS, Node.js 24.12+, and Codex CLI 0.163.0+ or Claude Code 2.1.292+ signed in.',
+    'Agent Garden\n\nUsage: agent-garden [--port 4317] [--no-open] [--data-dir PATH]\n\nRequires macOS, WSL2, or Windows, Node.js 24.12+, and Codex CLI 0.163.0+ signed in.',
   );
   process.exit(0);
 }
@@ -39,10 +39,8 @@ try {
   console.log(
     `\n  Agent Garden\n  ${url}\n\n  Keep this process running. Press Ctrl+C to close the dashboard.\n`,
   );
-  if (!values['no-open'] && process.platform === 'darwin') {
-    execFile('/usr/bin/open', [url], (error) => {
-      if (error) console.log(`Open ${url} in your browser.`);
-    });
+  if (!values['no-open'] && hostPlatform() !== 'unsupported') {
+    void openBrowser(url).catch(() => console.log(`Open ${url} in your browser.`));
   }
   for (const signal of ['SIGINT', 'SIGTERM'])
     process.once(signal, () => {

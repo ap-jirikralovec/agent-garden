@@ -1,7 +1,7 @@
 # Agent Garden
 
 Vue 3 Composition API and TypeScript, with Node's built-in HTTP server. Single npm
-package; the CLI serves the built browser assets. macOS first. Read README.md and
+package; the CLI serves the built browser assets. macOS, WSL2 and native Windows. Read README.md and
 docs/delivery.md before changing session behavior.
 
 - Agent providers own conversations, permissions, execution and approvals. Never implement
@@ -70,5 +70,11 @@ unix://` applies remote trust checks, while reasoning `-c` disables daemon reuse
   External terminal reopening must preserve provider settings, without Garden
   preset restoration. Discovery is bounded at 200 loaded sessions and the existing
   50 tracked-card limit; report truncation without treating it as disconnection.
-- The cat playground, historical/all-project discovery, npm publication and
-  cross-platform terminal support are follow-up work.
+- Keep host folder, terminal, browser and data-directory behavior in the small
+  platform boundary. WSL projects are in the current Linux distribution; do not
+  treat Windows paths as interchangeable with Linux paths. Native Windows uses
+  the standalone `codex.exe`, Windows project paths, LocalAppData metadata and
+  a detached console process for the user's default terminal. Its end-to-end
+  terminal handoff still needs verification on a Windows host.
+- The cat playground, historical/all-project discovery and npm publication are
+  follow-up work.

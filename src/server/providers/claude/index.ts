@@ -161,7 +161,7 @@ export class ClaudeProvider implements AgentProvider {
     if (session?.kind === 'interactive') {
       if (await this.terminal.focus(agent.id, session.pid)) return;
       throw new Error(
-        'This Claude conversation is already open. Use its existing terminal, or exit Claude there and try again. Garden can focus sessions opened in Terminal.app.',
+        'This Claude conversation is already open. Use its existing terminal, or exit Claude there and try again.',
       );
     }
     if (session?.kind === 'background') {

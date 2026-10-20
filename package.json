@@ -16,7 +16,7 @@
   },
   "scripts": {
     "dev": "node --import tsx src/server/cli.ts --dev",
-    "build": "rm -rf dist && vite build && tsc -p tsconfig.server.json",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && vite build && tsc -p tsconfig.server.json",
     "start": "node dist/server/cli.js",
     "type-check": "vue-tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
     "test": "vitest run",

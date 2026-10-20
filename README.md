@@ -1,14 +1,17 @@
 # Agent Garden
 
-A local browser dashboard for your agents. Create agents, see their status,
-project and current task, and open their terminal when you need to respond.
-Conversations and approvals stay in the terminal.
+Agent Garden is a local browser dashboard for creating and monitoring Codex
+agents. It shows their status, project, and current task, and opens their terminal
+when you need to respond. Conversations and approvals stay with Codex.
+
+The server, dashboard, and saved data run only on your machine. Agent Garden
+supports macOS, Windows through WSL2, and native Windows.
 
 ## Run locally
 
-Requires macOS, Node.js 24.12+ and Codex CLI 0.163.0+ installed and signed in.
-
-From the project folder:
+Install Node.js 24.12+ and Codex CLI 0.163.0+, then sign in to Codex. Use the
+standalone Codex installer on native Windows. On WSL2, install both inside the
+distribution.
 
 ```sh
 npm install
@@ -16,50 +19,6 @@ npm run build
 npm start
 ```
 
-Your browser opens at **http://127.0.0.1:4317**. Keep the launcher terminal running;
-press **Ctrl+C** to stop Garden.
-
-For development, use `npm run dev`.
-
-## Projects and saved data
-
-Use **Projects** in the header to add a project with the macOS folder picker.
-Choose an existing folder, or create one with **New Folder** in the picker.
-Projects stay saved even when they have no agents. Rename changes only the
-Garden display name. Remove is available after all its tracked agent cards have
-been removed; it never deletes the folder or its files.
-
-**Add agent** in the header (or the ghost card) opens creation with a saved project
-selector. In **Group by project**, empty projects have a compact placeholder;
-**Hide empty projects** hides them. Search matches saved project names and paths.
-Status filters show only projects with matching agents.
-
-Garden saves projects, tracked agent metadata and connection settings in
-`~/Library/Application Support/Agent Garden/agents.json`. Existing installations
-with legacy `Codex Garden/agents.json` reuse that directory in place. Agent
-conversations remain with their providers. Browser storage and the port number
-do not determine your saved data: restarting on another port uses the same file.
-Use `--data-dir PATH` for an independent dataset. Run only one Garden process per
-data directory; concurrent processes do not coordinate metadata writes.
-
-## External agents
-
-Garden automatically discovers open Codex sessions in saved project folders.
-**Settings** in the header has a global **Show external agents** switch, off by
-default. Enabling it shows external cards, counts and search results in every
-Garden window; hiding them leaves discovery and monitoring running. Garden-made
-cards carry the sprout logo, while imported cards say **External**.
-
-Discovery uses the connected Codex server's loaded-session list, including idle
-and waiting sessions, rather than scanning conversation history. Independent
-Codex servers and Claude discovery are not included. Once discovered, a card
-stays tracked when its session closes. Subagents stay nested under their parent.
-A removed card's native identity is remembered so it will not be rediscovered.
-External sessions that move outside saved folders are retained in metadata and
-shown again if their folder is saved. Discovery never adds projects itself.
-
-Checks are bounded at 200 loaded sessions and the existing 50 tracked cards.
-Settings reports discovery errors or limits separately from connection status.
-Opening an external agent uses its exact native session and preserves its Codex
-settings. Empty conversations without persisted presets follow Codex defaults
-when reopened. Discovery submits no tasks, resumes no sessions and changes no titles.
+Open **http://127.0.0.1:4317** if the browser does not open automatically. Keep
+the launcher terminal running; press **Ctrl+C** to stop Agent Garden. For
+development, use `npm run dev`.

@@ -3,11 +3,13 @@ import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useGardenStore } from './stores/garden';
 import { subscribeToGarden } from './gardenSync';
 import { faviconState, type FaviconState } from './favicon';
+import { NotificationTracker } from './browserNotifications';
 import CreateAgentDialog from './components/CreateAgentDialog.vue';
 import ApplicationHeader from './components/ApplicationHeader.vue';
 import DashboardGarden from './gardens/dashboard/DashboardGarden.vue';
 const creation = ref<InstanceType<typeof CreateAgentDialog>>();
 const garden = useGardenStore();
+const notificationTracker = new NotificationTracker();
 const faviconPaths: Record<FaviconState, string> = {
   default: '/favicon.svg',
   running: '/favicon-running.svg',
@@ -18,15 +20,49 @@ watch(
   (state) => document.querySelector('link[rel="icon"]')?.setAttribute('href', faviconPaths[state]),
   { immediate: true },
 );
+watch(
+  () => [garden.loaded, garden.snapshot, garden.browserConnected] as const,
+  ([loaded, snapshot, connected]) => {
+    const alerts = notificationTracker.observe(snapshot.agents, loaded && connected);
+    if (
+      !garden.notificationsEnabled ||
+      !('Notification' in window) ||
+      Notification.permission !== 'granted' ||
+      (document.visibilityState === 'visible' && document.hasFocus())
+    )
+      return;
+    for (const alert of alerts) {
+      try {
+        const notification = new Notification(alert.title, {
+          body: alert.body,
+          icon: '/favicon.svg',
+          tag: `garden-agent-${alert.agentId}`,
+        });
+        notification.onclick = () => {
+          window.focus();
+          notification.close();
+        };
+      } catch {
+        // Permission and platform support can change while Garden is open.
+      }
+    }
+  },
+  { immediate: true, flush: 'sync' },
+);
 let subscription: ReturnType<typeof subscribeToGarden> | undefined;
+const reloadNotificationPreference = () => garden.reloadNotificationPreference();
 onMounted(() => {
+  window.addEventListener('storage', reloadNotificationPreference);
   subscription = subscribeToGarden({
     receive: garden.receiveSnapshot,
     disconnect: garden.disconnect,
     revision: () => garden.revision,
   });
 });
-onUnmounted(() => subscription?.stop());
+onUnmounted(() => {
+  window.removeEventListener('storage', reloadNotificationPreference);
+  subscription?.stop();
+});
 function refresh() {
   void subscription?.refresh();
 }

@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useGardenStore } from '../src/client/stores/garden';
 import type { Snapshot } from '../src/shared/types';
 
@@ -38,6 +38,7 @@ function snapshot(): Snapshot {
 
 describe('shared Garden state', () => {
   beforeEach(() => setActivePinia(createPinia()));
+  afterEach(() => vi.unstubAllGlobals());
 
   it('exposes only available, connected providers for creation, retaining the full settings catalog', () => {
     const store = useGardenStore();
@@ -57,5 +58,21 @@ describe('shared Garden state', () => {
     expect(store.snapshot.projectSuggestion).toBe('/work/app');
     store.receiveSnapshot(snapshot());
     expect(store.monitorReady).toBe(true);
+  });
+
+  it('keeps the browser notification preference local to this browser', () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    });
+    const store = useGardenStore();
+    expect(store.notificationsEnabled).toBe(false);
+    store.setNotificationsEnabled(true);
+    expect(store.notificationsEnabled).toBe(true);
+    expect(values.get('agent-garden.notifications-enabled')).toBe('true');
+    values.set('agent-garden.notifications-enabled', 'false');
+    store.reloadNotificationPreference();
+    expect(store.notificationsEnabled).toBe(false);
   });
 });

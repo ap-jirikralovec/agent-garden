@@ -9,6 +9,8 @@ garden is **dashboard**. Additional gardens and a header selector are deferred.
   to that dialog. It contains no card, filtering or form logic. App also selects
   the favicon from the shared snapshot: live input requests take priority over
   running work, including subagents; a disconnected browser uses the plain icon.
+  Browser notifications use the same snapshots, alert only on fresh status
+  transitions while the tab is in the background, and reset after disconnects.
 - `gardenSync.ts` manages the subscription lifetime. SSE supplies snapshots, with
   an initial HTTP fetch and a five-second polling fallback while SSE is down.
   EventSource reconnects automatically; the next valid stream snapshot stops
@@ -19,6 +21,8 @@ garden is **dashboard**. Additional gardens and a header selector are deferred.
   and shared derived state, including provider availability and overview counts.
   Disconnecting retains the snapshot and saved identities. Components use
   `storeToRefs` for reactive state and store actions for shared updates.
+  Notification opt-in is stored in the browser because permission belongs to the
+  browser origin; it does not change server or provider state.
 - The server snapshot orders agents by saved conversation activity and projects
   by their most recently active agent. New sessions use creation time until the
   provider reports activity; empty projects follow active ones in saved order.

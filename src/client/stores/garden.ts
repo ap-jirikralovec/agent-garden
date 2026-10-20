@@ -3,6 +3,15 @@ import { defineStore } from 'pinia';
 import type { ProviderId, Snapshot } from '../../shared/types';
 import { hasWaitingWorker } from '../agentPresentation';
 
+const notificationPreferenceKey = 'agent-garden.notifications-enabled';
+function savedNotificationPreference(): boolean {
+  try {
+    return localStorage.getItem(notificationPreferenceKey) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 export const useGardenStore = defineStore('garden', () => {
   const snapshot = ref<Snapshot>({
     settings: { showExternalAgents: false },
@@ -16,6 +25,7 @@ export const useGardenStore = defineStore('garden', () => {
   const browserConnected = ref(true);
   const notice = ref('');
   const revision = ref(0);
+  const notificationsEnabled = ref(savedNotificationPreference());
 
   const availableProviders = computed(() =>
     snapshot.value.providers.filter((provider) => provider.available),
@@ -66,6 +76,17 @@ export const useGardenStore = defineStore('garden', () => {
   function notify(message: string) {
     notice.value = message;
   }
+  function setNotificationsEnabled(enabled: boolean) {
+    notificationsEnabled.value = enabled;
+    try {
+      localStorage.setItem(notificationPreferenceKey, String(enabled));
+    } catch {
+      // The setting still applies to this open tab when browser storage is unavailable.
+    }
+  }
+  function reloadNotificationPreference() {
+    notificationsEnabled.value = savedNotificationPreference();
+  }
   function projectLabel(path: string) {
     return (
       snapshot.value.projects.find((project) => project.path === path)?.name ??
@@ -86,6 +107,7 @@ export const useGardenStore = defineStore('garden', () => {
     browserConnected,
     notice,
     revision,
+    notificationsEnabled,
     availableProviders,
     readyProviders,
     providerProblems,
@@ -97,6 +119,8 @@ export const useGardenStore = defineStore('garden', () => {
     receiveSnapshot,
     disconnect,
     notify,
+    setNotificationsEnabled,
+    reloadNotificationPreference,
     projectLabel,
     providerName,
     providerEnabled,

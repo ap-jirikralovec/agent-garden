@@ -4,13 +4,38 @@ import { storeToRefs } from 'pinia';
 import { gardenApi } from '../api';
 import { useGardenStore } from '../stores/garden';
 const store = useGardenStore();
-const { snapshot, browserConnected } = storeToRefs(store);
+const { snapshot, browserConnected, notificationsEnabled } = storeToRefs(store);
 const dialog = ref<HTMLDialogElement>();
 const busy = ref(false);
 const error = ref('');
+const notificationPermission = ref<'default' | 'granted' | 'denied' | 'unsupported'>('unsupported');
 function open() {
   error.value = '';
+  notificationPermission.value = 'Notification' in window ? Notification.permission : 'unsupported';
   dialog.value?.showModal();
+}
+async function toggleNotifications(event: Event) {
+  const input = event.target as HTMLInputElement;
+  error.value = '';
+  if (!input.checked) {
+    store.setNotificationsEnabled(false);
+    return;
+  }
+  busy.value = true;
+  try {
+    notificationPermission.value = await Notification.requestPermission();
+    if (notificationPermission.value !== 'granted') {
+      input.checked = false;
+      error.value = 'Enable notifications for Garden in your browser settings, then try again.';
+      return;
+    }
+    store.setNotificationsEnabled(true);
+  } catch {
+    input.checked = false;
+    error.value = 'Could not enable browser notifications. Check your browser settings.';
+  } finally {
+    busy.value = false;
+  }
 }
 async function toggle(event: Event) {
   const input = event.target as HTMLInputElement;
@@ -62,6 +87,35 @@ defineExpose({ open });
           :checked="snapshot.settings.showExternalAgents"
           :disabled="busy || !browserConnected"
           @change="toggle"
+        />
+        <span aria-hidden="true"></span>
+      </label>
+    </div>
+    <div class="visibility-setting">
+      <div>
+        <strong id="notifications-label">Browser notifications</strong>
+        <p id="notifications-hint">
+          Alert when an agent needs input or a response finishes while this tab is in the
+          background. This preference is saved in this browser.
+        </p>
+        <p v-if="notificationPermission === 'unsupported'">
+          This browser does not support desktop notifications.
+        </p>
+        <p v-else-if="notificationPermission === 'denied'">
+          Notifications are blocked. Allow them for Garden in your browser settings.
+        </p>
+      </div>
+      <label class="connection-switch">
+        <input
+          type="checkbox"
+          role="switch"
+          aria-labelledby="notifications-label"
+          aria-describedby="notifications-hint"
+          :checked="notificationsEnabled && notificationPermission === 'granted'"
+          :disabled="
+            busy || notificationPermission === 'unsupported' || notificationPermission === 'denied'
+          "
+          @change="toggleNotifications"
         />
         <span aria-hidden="true"></span>
       </label>

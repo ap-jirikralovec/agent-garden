@@ -45,6 +45,11 @@ export function groupAgents(
 ) {
   if (!byProject) return [{ project: '', agents }];
   const groups = new Map<string, Agent[]>();
+  for (const agent of agents) {
+    const group = groups.get(agent.project) ?? [];
+    group.push(agent);
+    groups.set(agent.project, group);
+  }
   if (options && !options.hideEmpty && (!options.status || options.status === 'all')) {
     const occupied = new Set(options.allAgents.map((agent) => agent.project));
     const term = options.search.trim().toLowerCase();
@@ -55,11 +60,6 @@ export function groupAgents(
       )
         groups.set(project.path, []);
     }
-  }
-  for (const agent of agents) {
-    const group = groups.get(agent.project) ?? [];
-    group.push(agent);
-    groups.set(agent.project, group);
   }
   return [...groups].map(([project, agents]) => ({ project, agents }));
 }

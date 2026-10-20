@@ -12,6 +12,7 @@ import {
 import type { AgentProvider } from './providers/provider.js';
 import { AgentStore } from './store.js';
 import { checkProject, prepareProject } from './project.js';
+import { sortRecentAgents, sortRecentProjects } from './ordering.js';
 
 interface ProviderRuntime {
   adapter: AgentProvider;
@@ -61,22 +62,26 @@ export class Garden extends EventEmitter {
   }
 
   snapshot(): Snapshot {
+    const agents = this.store.list();
+    const projects = this.store.listProjects();
     return {
       settings: { showExternalAgents: this.store.showExternalAgents() },
-      projects: this.store.listProjects().map((project) => ({
-        ...project,
-        agentCount: this.store.list().filter((agent) => agent.project === project.path).length,
-      })),
-      agents: this.store
-        .list()
-        .filter(
+      projects: sortRecentProjects(
+        projects.map((project) => ({
+          ...project,
+          agentCount: agents.filter((agent) => agent.project === project.path).length,
+        })),
+        agents,
+      ),
+      agents: sortRecentAgents(
+        agents.filter(
           (agent) =>
             this.providers.has(agent.provider) &&
             (agent.origin !== 'external' ||
               (this.store.showExternalAgents() &&
-                this.store.listProjects().some((project) => project.path === agent.project))),
-        )
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+                projects.some((project) => project.path === agent.project))),
+        ),
+      ),
       providers: this.adapters.map((adapter): ProviderSnapshot => {
         const runtime = this.providers.get(adapter.id);
         const enabled = !!runtime && this.store.providerEnabled(adapter.id);

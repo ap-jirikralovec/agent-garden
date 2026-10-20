@@ -112,6 +112,16 @@ it('retains both old and new projects when observation moves an agent to another
   ]);
 });
 
+it('retains conversation activity across restarts', async () => {
+  const original = await store();
+  const item = agent('/work/recent');
+  await original.put(item);
+  await original.update(item.id, { lastActiveAt: '2026-10-20T09:00:00.000Z' });
+  const reloaded = new AgentStore(original.directory);
+  await reloaded.load();
+  expect(reloaded.list()[0].lastActiveAt).toBe('2026-10-20T09:00:00.000Z');
+});
+
 it('preserves a malformed version 3 project file instead of overwriting it', async () => {
   const original = await store();
   const content = JSON.stringify({

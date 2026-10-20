@@ -15,6 +15,7 @@ export function observe(previous: Agent, thread: Thread, turn?: Turn): AgentObse
     connection: previous.connection,
     detail: previous.detail,
     lastSeen: previous.lastSeen,
+    lastActiveAt: previous.lastActiveAt,
     project: thread.cwd || previous.project,
     model: thread.status.type === 'notLoaded' ? previous.model : thread.model || previous.model,
     reasoning:
@@ -23,6 +24,14 @@ export function observe(previous: Agent, thread: Thread, turn?: Turn): AgentObse
         : thread.reasoningEffort || previous.reasoning,
     task: task ? task.slice(0, 4000) : previous.task || thread.preview.slice(0, 4000),
   };
+  if (typeof thread.updatedAt === 'number' && Number.isFinite(thread.updatedAt)) {
+    const updated = new Date(thread.updatedAt * 1000);
+    if (
+      Number.isFinite(updated.getTime()) &&
+      (!agent.lastActiveAt || updated.getTime() > Date.parse(agent.lastActiveAt))
+    )
+      agent.lastActiveAt = updated.toISOString();
+  }
   if (thread.status.type === 'notLoaded') {
     return {
       ...agent,

@@ -43,6 +43,10 @@ export function observeClaude(
     status,
     connection: verified ? 'connected' : 'disconnected',
     lastSeen: verified ? new Date().toISOString() : (latest?.at ?? agent.lastSeen),
+    lastActiveAt:
+      stateEvent && (!agent.lastActiveAt || stateEvent.at > agent.lastActiveAt)
+        ? stateEvent.at
+        : agent.lastActiveAt,
     detail: verified
       ? session.waitingFor
         ? `Claude needs ${session.waitingFor}. Open its terminal to respond.`

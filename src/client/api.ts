@@ -1,4 +1,4 @@
-import type { Agent, NewAgent, ProjectCheck, ProviderId, Snapshot } from '../shared/types';
+import type { Agent, NewAgent, Project, ProjectCheck, ProviderId, Snapshot } from '../shared/types';
 
 async function request<T>(
   path: string,
@@ -21,6 +21,11 @@ export const gardenApi = {
   state: (signal?: AbortSignal) => request<Snapshot>('/api/state', 'GET', undefined, signal),
   setProvider: (id: ProviderId, enabled: boolean) =>
     request<Snapshot>(`/api/providers/${id}`, 'POST', { enabled }),
+  pickProject: () =>
+    request<{ project: Project | null; snapshot: Snapshot }>('/api/projects/pick', 'POST'),
+  renameProject: (project: string, name: string) =>
+    request<Snapshot>('/api/projects', 'POST', { project, name }),
+  removeProject: (project: string) => request<Snapshot>('/api/projects', 'DELETE', { project }),
   checkProject: (project: string) =>
     request<ProjectCheck>('/api/projects/check', 'POST', { project }),
   createAgent: (agent: NewAgent) =>

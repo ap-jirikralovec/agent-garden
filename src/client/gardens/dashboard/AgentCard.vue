@@ -4,7 +4,7 @@ import { storeToRefs } from 'pinia';
 import { statusLabels, type Agent } from '../../../shared/types';
 import { useGardenStore } from '../../stores/garden';
 import { gardenApi } from '../../api';
-import { projectName, hasWaitingWorker, initials, seen } from '../../agentPresentation';
+import { hasWaitingWorker, initials, seen } from '../../agentPresentation';
 import ProviderLogo from '../../components/ProviderLogo.vue';
 import WorkerList from './WorkerList.vue';
 defineProps<{ agent: Agent; index: number; now: number }>();
@@ -81,7 +81,9 @@ async function remove(agent: Agent) {
       <span class="avatar" :class="`avatar-${index % 4}`">{{ initials(agent.name) }}</span>
       <div class="agent-name">
         <h3>{{ agent.name }}</h3>
-        <span class="project-name" :title="agent.project">⌁ {{ projectName(agent.project) }}</span>
+        <span class="project-name" :title="agent.project"
+          >⌁ {{ store.projectLabel(agent.project) }}</span
+        >
       </div>
       <button
         class="icon-button remove-card"

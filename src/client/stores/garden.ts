@@ -4,7 +4,13 @@ import type { ProviderId, Snapshot } from '../../shared/types';
 import { hasWaitingWorker } from '../agentPresentation';
 
 export const useGardenStore = defineStore('garden', () => {
-  const snapshot = ref<Snapshot>({ agents: [], providers: [], error: null, projectSuggestion: '' });
+  const snapshot = ref<Snapshot>({
+    projects: [],
+    agents: [],
+    providers: [],
+    error: null,
+    projectSuggestion: '',
+  });
   const loaded = ref(false);
   const browserConnected = ref(true);
   const notice = ref('');
@@ -59,6 +65,13 @@ export const useGardenStore = defineStore('garden', () => {
   function notify(message: string) {
     notice.value = message;
   }
+  function projectLabel(path: string) {
+    return (
+      snapshot.value.projects.find((project) => project.path === path)?.name ??
+      path.split('/').filter(Boolean).pop() ??
+      path
+    );
+  }
   function providerName(id: ProviderId) {
     return snapshot.value.providers.find((provider) => provider.id === id)?.name ?? id;
   }
@@ -83,6 +96,7 @@ export const useGardenStore = defineStore('garden', () => {
     receiveSnapshot,
     disconnect,
     notify,
+    projectLabel,
     providerName,
     providerEnabled,
   };

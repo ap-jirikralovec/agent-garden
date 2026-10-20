@@ -11,7 +11,7 @@ import {
 } from '../shared/types.js';
 import type { AgentProvider } from './providers/provider.js';
 import { AgentStore } from './store.js';
-import { prepareProject } from './project.js';
+import { checkProject, prepareProject } from './project.js';
 
 interface ProviderRuntime {
   adapter: AgentProvider;
@@ -60,6 +60,10 @@ export class Garden extends EventEmitter {
 
   snapshot(): Snapshot {
     return {
+      projects: this.store.listProjects().map((project) => ({
+        ...project,
+        agentCount: this.store.list().filter((agent) => agent.project === project.path).length,
+      })),
       agents: this.store
         .list()
         .filter((agent) => this.providers.has(agent.provider))
@@ -248,6 +252,26 @@ export class Garden extends EventEmitter {
       runtime.changing = false;
       this.emitSnapshot();
     }
+  }
+
+  async addProject(path: string) {
+    const project = await checkProject(path);
+    if (!project.exists) throw new Error('This project folder no longer exists. Choose it again.');
+    await this.store.addProject(project.path);
+    this.emitSnapshot();
+    return this.store.listProjects().find((saved) => saved.path === project.path)!;
+  }
+
+  async renameProject(path: string, name: string) {
+    await this.store.renameProject(path, name);
+    this.emitSnapshot();
+  }
+
+  async removeProject(path: string) {
+    if (this.creating)
+      throw new Error('Wait for agent creation to finish before removing a project.');
+    await this.store.removeProject(path);
+    this.emitSnapshot();
   }
 
   async create(input: NewAgent): Promise<{ agent: Agent; warning: string | null }> {

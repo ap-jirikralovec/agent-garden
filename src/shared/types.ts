@@ -59,7 +59,17 @@ export interface ProviderSnapshot {
   configuration: ProviderConfiguration | null;
 }
 
+export interface Project {
+  path: string;
+  name: string;
+}
+
+export interface ProjectSummary extends Project {
+  agentCount: number;
+}
+
 export interface Snapshot {
+  projects: ProjectSummary[];
   agents: Agent[];
   providers: ProviderSnapshot[];
   error: string | null;

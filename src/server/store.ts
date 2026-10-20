@@ -1,15 +1,23 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { isProviderId, type Agent, type AgentWorker, type ProviderId } from '../shared/types.js';
+import { basename, isAbsolute, join } from 'node:path';
+import {
+  isProviderId,
+  type Agent,
+  type AgentWorker,
+  type ProviderId,
+  type Project,
+} from '../shared/types.js';
 
 const statuses = new Set(['idle', 'working', 'waiting', 'finished', 'failed']);
 interface StoredState {
+  projects: Project[];
   agents: Agent[];
   connections: Partial<Record<ProviderId, boolean>>;
 }
 
 export class AgentStore {
   private agents: Agent[] = [];
+  private projects: Project[] = [];
   private connections: Partial<Record<ProviderId, boolean>> = {};
   private queue: Promise<void> = Promise.resolve();
   constructor(readonly directory: string) {}
@@ -19,10 +27,10 @@ export class AgentStore {
     try {
       const file = JSON.parse(await readFile(join(this.directory, 'agents.json'), 'utf8'));
       if (
-        ![1, 2].includes(file.version) ||
+        ![1, 2, 3].includes(file.version) ||
         !Array.isArray(file.agents) ||
         !file.agents.every((agent: unknown) => validAgent(agent, file.version === 1)) ||
-        (file.version === 2 &&
+        (file.version >= 2 &&
           (!file.connections ||
             typeof file.connections !== 'object' ||
             Array.isArray(file.connections) ||
@@ -32,6 +40,14 @@ export class AgentStore {
       ) {
         throw new Error('Unexpected metadata format');
       }
+      if (
+        file.version === 3 &&
+        (!Array.isArray(file.projects) ||
+          !file.projects.every(validProject) ||
+          new Set(file.projects.map((p: Project) => p.path)).size !== file.projects.length)
+      )
+        throw new Error('Unexpected project metadata format');
+      this.projects = file.version === 3 ? file.projects : [];
       this.agents = file.agents.map((agent: Agent) => ({
         ...agent,
         provider: file.version === 1 ? 'codex' : agent.provider,
@@ -41,7 +57,8 @@ export class AgentStore {
           ? { workers: agent.workers.map((worker) => ({ ...worker, connection: 'disconnected' })) }
           : {}),
       }));
-      this.connections = file.version === 2 ? file.connections : {};
+      this.connections = file.version >= 2 ? file.connections : {};
+      this.projects = includeAgentProjects(this.projects, this.agents);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         throw new Error(
@@ -56,10 +73,46 @@ export class AgentStore {
     return this.agents.map((agent) => ({ ...agent }));
   }
 
+  listProjects(): Project[] {
+    return this.projects.map((project) => ({ ...project }));
+  }
+
+  async addProject(path: string) {
+    return this.mutate((state) => ({
+      ...state,
+      projects: includeAgentProjects(state.projects, [{ project: path }]),
+    }));
+  }
+
+  async renameProject(path: string, value: string) {
+    return this.mutate((state) => {
+      const name = value.trim();
+      if (!validProject({ path, name }))
+        throw new Error('Use a project name between 1 and 60 characters.');
+      if (!state.projects.some((project) => project.path === path))
+        throw new Error('This project is not saved.');
+      return {
+        ...state,
+        projects: state.projects.map((project) =>
+          project.path === path ? { ...project, name } : project,
+        ),
+      };
+    });
+  }
+
+  async removeProject(path: string) {
+    return this.mutate((state) => {
+      if (state.agents.some((agent) => agent.project === path))
+        throw new Error('Remove its agents from Garden before removing this project.');
+      return { ...state, projects: state.projects.filter((project) => project.path !== path) };
+    });
+  }
+
   async put(agent: Agent) {
     return this.mutate((state) => ({
       ...state,
       agents: [...state.agents.filter((item) => item.id !== agent.id), agent],
+      projects: includeAgentProjects(state.projects, [agent]),
     }));
   }
 
@@ -71,10 +124,12 @@ export class AgentStore {
   }
 
   async update(id: string, update: Partial<Agent>) {
-    return this.mutate((state) => ({
-      ...state,
-      agents: state.agents.map((agent) => (agent.id === id ? { ...agent, ...update } : agent)),
-    }));
+    return this.mutate((state) => {
+      const agents = state.agents.map((agent) =>
+        agent.id === id ? { ...agent, ...update } : agent,
+      );
+      return { ...state, agents, projects: includeAgentProjects(state.projects, agents) };
+    });
   }
 
   providerEnabled(id: ProviderId) {
@@ -90,7 +145,11 @@ export class AgentStore {
 
   private mutate(change: (state: StoredState) => StoredState) {
     const operation = this.queue.then(async () => {
-      const previous = { agents: this.agents, connections: this.connections };
+      const previous = {
+        agents: this.agents,
+        connections: this.connections,
+        projects: this.projects,
+      };
       const next = change(previous);
       // Seeing the same state again updates the live timestamp without rewriting
       // the file every poll. State changes (including disconnects) persist it.
@@ -103,15 +162,17 @@ export class AgentStore {
               : {}),
           })),
           connections: state.connections,
+          projects: state.projects,
         });
       if (durable(next) !== durable(previous)) {
         const target = join(this.directory, 'agents.json');
         const temporary = target + '.tmp';
-        await writeFile(temporary, JSON.stringify({ version: 2, ...next }, null, 2) + '\n', {
+        await writeFile(temporary, JSON.stringify({ version: 3, ...next }, null, 2) + '\n', {
           mode: 0o600,
         });
         await rename(temporary, target);
       }
+      this.projects = next.projects;
       this.agents = next.agents;
       this.connections = next.connections;
     });
@@ -158,5 +219,28 @@ function validWorker(value: unknown): value is AgentWorker {
     (worker.connection === 'connected' || worker.connection === 'disconnected') &&
     (worker.lastSeen === null || typeof worker.lastSeen === 'string') &&
     (worker.detail === null || typeof worker.detail === 'string')
+  );
+}
+
+function includeAgentProjects(projects: Project[], agents: { project: string }[]): Project[] {
+  const saved = new Map(projects.map((project) => [project.path, project]));
+  for (const { project: path } of agents) {
+    if (!saved.has(path)) saved.set(path, { path, name: (basename(path) || path).slice(0, 60) });
+  }
+  return [...saved.values()];
+}
+
+function validProject(value: unknown): value is Project {
+  if (!value || typeof value !== 'object') return false;
+  const p = value as Record<string, unknown>;
+  return (
+    typeof p.path === 'string' &&
+    isAbsolute(p.path) &&
+    p.path.length <= 4096 &&
+    typeof p.name === 'string' &&
+    p.name.trim().length > 0 &&
+    p.name.length <= 60 &&
+    // eslint-disable-next-line no-control-regex -- Project metadata must contain plain names and paths.
+    !/[\x00-\x1f]/.test(p.path + p.name)
   );
 }

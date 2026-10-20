@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { subscribeToGarden } from '../src/client/gardenSync';
 
-const initial = { agents: [], providers: [], error: null, projectSuggestion: 'initial' };
+const initial = {
+  projects: [],
+  agents: [],
+  providers: [],
+  error: null,
+  projectSuggestion: 'initial',
+};
 class Stream {
   static current: Stream;
   onmessage?: (event: { data: string }) => void;

@@ -5,6 +5,7 @@ import type { Snapshot } from '../src/shared/types';
 
 function snapshot(): Snapshot {
   return {
+    projects: [],
     agents: [],
     error: null,
     projectSuggestion: '/work/app',

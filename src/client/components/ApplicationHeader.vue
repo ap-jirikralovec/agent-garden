@@ -2,8 +2,12 @@
 import { ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useGardenStore } from '../stores/garden';
+import ProjectsDialog from './ProjectsDialog.vue';
 import ConnectionsDialog from './ConnectionsDialog.vue';
-const { browserConnected, connectedCount, connectionsEnabled } = storeToRefs(useGardenStore());
+const emit = defineEmits<{ addAgent: [] }>();
+const projects = ref<InstanceType<typeof ProjectsDialog>>();
+const { browserConnected, connectedCount, connectionsEnabled, monitorReady, loaded } =
+  storeToRefs(useGardenStore());
 const connections = ref<InstanceType<typeof ConnectionsDialog>>();
 </script>
 
@@ -23,18 +27,30 @@ const connections = ref<InstanceType<typeof ConnectionsDialog>>();
       <span>agent<span class="brand-light">garden</span><small>LOCAL WORKSPACE</small></span>
     </a>
     <div class="header-actions">
-      <span class="local-tag" @click="connections?.open()"
-        ><span class="dot" :class="browserConnected && connectedCount ? 'green' : 'amber'"></span
+      <button class="secondary" :disabled="!loaded || !browserConnected" @click="projects?.open()">
+        Projects
+      </button>
+      <button class="primary" :disabled="!monitorReady" @click="emit('addAgent')">
+        ＋ Add agent
+      </button>
+      <button
+        type="button"
+        aria-label="Manage connections"
+        class="local-tag"
+        @click="connections?.open()"
+      >
+        <span class="dot" :class="browserConnected && connectedCount ? 'green' : 'amber'"></span
         >{{
           !browserConnected
             ? 'Dashboard offline'
             : !connectionsEnabled
               ? 'Connections paused'
               : `${connectedCount} connected`
-        }}</span
-      >
+        }}
+      </button>
     </div>
   </header>
+  <ProjectsDialog ref="projects" />
   <ConnectionsDialog ref="connections" />
 </template>
 
@@ -51,6 +67,8 @@ const connections = ref<InstanceType<typeof ConnectionsDialog>>();
   padding-inline: 0.75rem;
   margin-inline: -0.75rem;
   border-radius: 1.25rem;
+  z-index: 10;
+  gap: var(--space-3);
   position: sticky;
   top: 0.5rem;
 }
@@ -101,7 +119,8 @@ const connections = ref<InstanceType<typeof ConnectionsDialog>>();
 }
 @include tokens.mobile {
   .topbar {
-    height: 88px;
+    flex-wrap: wrap;
+    padding-block: var(--space-4);
   }
   .brand {
     font-size: 20px;
@@ -127,9 +146,15 @@ const connections = ref<InstanceType<typeof ConnectionsDialog>>();
 @include tokens.mobile {
   .header-actions {
     gap: 7px;
+    flex-wrap: wrap;
+  }
+  .header-actions > .primary,
+  .header-actions > .secondary {
+    padding: 9px 11px;
+    font-size: 12px;
   }
   .header-actions .local-tag {
-    display: none;
+    display: flex;
   }
 }
 </style>

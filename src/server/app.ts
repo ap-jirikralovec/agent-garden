@@ -8,6 +8,7 @@ import { resolve, sep, extname } from 'node:path';
 import { isProviderId, type NewAgent, type Snapshot } from '../shared/types.js';
 import type { Garden } from './garden.js';
 import { checkProject } from './project.js';
+import { pickProjectFolder } from './folderPicker.js';
 
 function json(response: ServerResponse, status: number, body: unknown) {
   response.writeHead(status, { 'Content-Type': 'application/json' });
@@ -59,7 +60,7 @@ async function readAgent(request: IncomingMessage): Promise<NewAgent> {
 
 export async function createApp(
   garden: Garden,
-  options: { clientDirectory: string; dev?: boolean },
+  options: { clientDirectory: string; dev?: boolean; pickFolder?: () => Promise<string | null> },
 ) {
   let vite: Awaited<ReturnType<(typeof import('vite'))['createServer']>> | undefined;
   if (options.dev) {
@@ -112,6 +113,22 @@ export async function createApp(
       if (Object.keys(input).length !== 1 || typeof input.enabled !== 'boolean')
         throw new Error('Connection enabled must be true or false.');
       await garden.setProviderEnabled(providerPath[1], input.enabled);
+      return json(response, 200, garden.snapshot());
+    }
+    if (request.method === 'POST' && pathname === '/api/projects/pick') {
+      const path = await (options.pickFolder ?? pickProjectFolder)();
+      const project = path === null ? null : await garden.addProject(path);
+      return json(response, 200, { project, snapshot: garden.snapshot() });
+    }
+    if (pathname === '/api/projects' && ['POST', 'DELETE'].includes(request.method ?? '')) {
+      const input = await readObject(request);
+      if (typeof input.project !== 'string' || input.project.length > 4096)
+        throw new Error('Choose a saved project.');
+      if (request.method === 'DELETE') await garden.removeProject(input.project);
+      else {
+        if (typeof input.name !== 'string') throw new Error('Enter a project name.');
+        await garden.renameProject(input.project, input.name);
+      }
       return json(response, 200, garden.snapshot());
     }
     if (request.method === 'POST' && pathname === '/api/projects/check') {

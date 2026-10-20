@@ -3,13 +3,11 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import type { ProviderId } from '../../../shared/types';
 import { useGardenStore } from '../../stores/garden';
-import { projectName } from '../../agentPresentation';
 import { filterAgents, groupAgents } from './agentView';
 import DashboardOverview from './DashboardOverview.vue';
 import DashboardFilters from './DashboardFilters.vue';
 import AgentCard from './AgentCard.vue';
-import CreateAgentDialog from '../../components/CreateAgentDialog.vue';
-const emit = defineEmits<{ refresh: [] }>();
+const emit = defineEmits<{ refresh: []; addAgent: [project?: string] }>();
 const store = useGardenStore();
 const {
   snapshot: state,
@@ -32,7 +30,7 @@ const providerFilters = computed({
   },
 });
 const groupByProject = ref(false);
-const creation = ref<InstanceType<typeof CreateAgentDialog>>();
+const hideEmpty = ref(false);
 const now = ref(Date.now());
 let clock: ReturnType<typeof setInterval>;
 onMounted(() => {
@@ -42,13 +40,28 @@ onMounted(() => {
 });
 onUnmounted(() => clearInterval(clock));
 const visible = computed(() =>
-  filterAgents(state.value.agents, providerFilters.value, filter.value, search.value),
+  filterAgents(
+    state.value.agents,
+    providerFilters.value,
+    filter.value,
+    search.value,
+    state.value.projects,
+  ),
 );
-const groups = computed(() => groupAgents(visible.value, groupByProject.value));
+const groups = computed(() =>
+  groupAgents(visible.value, groupByProject.value, {
+    projects: state.value.projects,
+    allAgents: state.value.agents,
+    hideEmpty: hideEmpty.value,
+    search: search.value,
+    status: filter.value,
+  }),
+);
 function clearFilters() {
   filter.value = 'all';
   search.value = '';
   selectedProviders.value = null;
+  hideEmpty.value = false;
 }
 </script>
 
@@ -60,9 +73,6 @@ function clearFilters() {
         <h1>Your agents, at a glance.</h1>
         <p class="subtitle">See what’s growing. Jump into a terminal when you’re needed.</p>
       </div>
-      <button class="primary" :disabled="!monitorReady" @click="creation?.open()">
-        <span aria-hidden="true">＋</span> Add agent
-      </button>
     </section>
 
     <div
@@ -110,10 +120,11 @@ function clearFilters() {
         v-model:filter="filter"
         v-model:providers="providerFilters"
         v-model:grouped="groupByProject"
+        v-model:hide-empty="hideEmpty"
       />
 
       <div v-if="!loaded" class="empty-state"><p>Opening the garden…</p></div>
-      <div v-else-if="!total" class="empty-state">
+      <div v-else-if="!total && !state.projects.length" class="empty-state">
         <div class="empty-art" aria-hidden="true">
           <span class="plant-stem"></span><span class="plant-leaf left"></span
           ><span class="plant-leaf right"></span><span class="plant-pot"></span
@@ -125,14 +136,25 @@ function clearFilters() {
           Give it a name, choose a project, and start a task in your terminal.<br />We’ll keep an
           eye on its status here.
         </p>
-        <button class="primary" :disabled="!monitorReady" @click="creation?.open()">
+        <button class="primary" :disabled="!monitorReady" @click="emit('addAgent')">
           ＋ Add your first agent
         </button>
         <small>Local to your Mac. Conversations stay in your terminal.</small>
       </div>
-      <div v-else-if="!visible.length" class="empty-state compact">
-        <h3>No agents match this view.</h3>
-        <p>Choose an agent type, try another status, or clear your search.</p>
+      <div
+        v-else-if="!visible.length && !(groupByProject && groups.length)"
+        class="empty-state compact"
+      >
+        <h3>
+          {{
+            groupByProject
+              ? 'No projects match this view.'
+              : !total
+                ? 'No agents currently.'
+                : 'No agents match this view.'
+          }}
+        </h3>
+        <p>Add an agent from the header, or clear your filters to see more.</p>
         <button class="secondary" @click="clearFilters">Clear filters</button>
       </div>
       <div v-else class="agent-groups">
@@ -145,13 +167,23 @@ function clearFilters() {
           <header v-if="groupByProject" class="project-heading">
             <div>
               <h3>
-                {{ projectName(group.project) }}
+                {{ store.projectLabel(group.project) }}
                 <span class="count-bubble">{{ group.agents.length }}</span>
               </h3>
               <p>{{ group.project }}</p>
             </div>
           </header>
-          <div class="agent-grid">
+          <div v-if="!group.agents.length && groupByProject" class="empty-project">
+            <span>No agents currently.</span>
+            <button
+              class="secondary"
+              :disabled="!monitorReady"
+              @click="emit('addAgent', group.project)"
+            >
+              ＋ Add agent
+            </button>
+          </div>
+          <div v-else class="agent-grid">
             <AgentCard
               v-for="(agent, index) in group.agents"
               :key="agent.id"
@@ -164,7 +196,7 @@ function clearFilters() {
               v-if="!groupByProject"
               class="add-card"
               :disabled="!monitorReady"
-              @click="creation?.open()"
+              @click="emit('addAgent')"
             >
               <span aria-hidden="true">＋</span><strong>Make room for another</strong
               ><small>Add a new agent</small>
@@ -178,7 +210,6 @@ function clearFilters() {
       ><span>Conversations stay in your terminal <span aria-hidden="true">↗</span></span>
     </footer>
   </main>
-  <CreateAgentDialog ref="creation" @created="emit('refresh')" />
 </template>
 
 <style scoped lang="scss">
@@ -476,6 +507,22 @@ main {
   color: var(--color-muted);
   margin-top: 5px;
   overflow-wrap: anywhere;
+}
+.empty-project {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-control);
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.empty-project .secondary {
+  padding: 7px 10px;
+  font-size: 11px;
 }
 .project-group {
   min-width: 0;

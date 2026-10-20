@@ -357,3 +357,56 @@ resolved before this task, and baseline `8b5f538` exists. This work is on
 
 Deviation from initial plan: added repo-wide ESLint/Prettier, initial formatting
 and workspace save hooks at the user's explicit request.
+
+## Persistent projects and header actions — 2026-10-20
+
+Approved in conversation: add folders through a native picker, retain projects
+without agents, manage projects from a header dialog, move Add agent to the
+header while keeping the ghost card, and offer Hide empty projects. Project
+management includes display-name editing and removal only after all tracked
+agents are removed. Manual path entry is superseded by folder selection; users
+can create a directory through the picker's New Folder action. Execution: Rails.
+
+Projects use canonical folder paths as their keys, with independent display
+names. Metadata version 3 adds projects to the existing atomic `agents.json`;
+versions 1 and 2 derive projects from tracked cards without changing card/native
+IDs or connection preferences. Removing the last card keeps its project. A
+provider observation that changes its working directory retains both projects.
+Project removal checks all tracked cards, including unavailable providers, in
+the same serialized store operation as the deletion. No folder deletion occurs.
+Provider session creation, terminal handoff, and monitoring remain provider-owned.
+
+The server opens an AppKit folder-only panel on explicit Add project, supporting
+New Folder and cancellation. It passes a static JXA program to `osascript` as an
+argument, validates the returned directory and deduplicates canonical paths.
+Only one picker may open at once. Project routes retain local-host, origin and
+request-header checks. Cancellation returns an unchanged snapshot. The browser
+uses saved projects for agent creation, with Add project available there too.
+Grouped dashboard rows include truly empty projects with a compact message and
+an Add agent action preselecting that project. Hide empty defaults off; status
+filters omit empty rows, and populated projects hidden by filters are not
+misrepresented as empty. Search includes saved display names and full paths.
+
+Verification performed:
+
+- All 41 tests pass. New cases cover independent project persistence, legacy
+  migration, display names, concurrent writes, removal guards, preservation of
+  malformed metadata, working-directory changes, hidden-provider counts,
+  empty-project/search/status combinations, native picker cancellation/failure
+  and concurrency, and same-origin protection on project routes.
+- Type checks, lint, formatting, production build and `git diff --check` pass.
+  The real-Codex no-inference lifecycle smoke check passes.
+- An isolated preview with temporary metadata and a fake provider confirmed the
+  header actions, retained ghost card, compact empty row, hide-empty toggle,
+  display-name editing and disabled removal of a populated project in Zen.
+  Native folder selection returned a real folder and saved it in the preview.
+  No actual agent tasks or terminal sessions were created by the preview.
+- The computer-use tool then repeatedly timed out. Mobile layout, end-to-end
+  creation from the saved-project selector, and creating a new directory inside
+  the native picker remain manual visual checks. Native cancellation and
+  creation capability are covered at the process/API boundary, rather than
+  claimed as full native UI verification. SonarQube is unavailable.
+
+Deviation from initial plan: None. The remaining host checks above are
+verification limitations, not a change to scope. Restart the Garden backend and
+reload the browser to load the new project routes and snapshot schema.

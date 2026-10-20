@@ -57,3 +57,43 @@ it('combines multi-provider, status and search filters before grouping by the fu
   ]);
   expect(groupAgents(agents, false)[0].agents).toEqual(agents);
 });
+
+it('shows only genuinely empty projects and searches their saved names, respecting hide empty', () => {
+  const projects = [
+    { path: '/work/empty', name: 'Design lab' },
+    { path: '/work/busy', name: 'Busy' },
+  ];
+  const all = [{ project: '/work/busy' }] as Agent[];
+  expect(groupAgents([], true, { projects, allAgents: all, hideEmpty: false, search: '' })).toEqual(
+    [{ project: '/work/empty', agents: [] }],
+  );
+  expect(groupAgents([], true, { projects, allAgents: all, hideEmpty: true, search: '' })).toEqual(
+    [],
+  );
+  expect(
+    groupAgents([], true, { projects, allAgents: all, hideEmpty: false, search: 'design' }),
+  ).toHaveLength(1);
+  expect(
+    groupAgents([], true, { projects, allAgents: all, hideEmpty: false, search: 'busy' }),
+  ).toEqual([]);
+  expect(
+    groupAgents([], true, {
+      projects,
+      allAgents: all,
+      hideEmpty: false,
+      search: '',
+      status: 'waiting',
+    }),
+  ).toEqual([]);
+});
+
+it('does not present projects with hidden-provider agents as empty', () => {
+  expect(
+    groupAgents([], true, {
+      projects: [{ path: '/work/hidden', name: 'Hidden', agentCount: 1 }],
+      allAgents: [],
+      hideEmpty: false,
+      search: '',
+    }),
+  ).toEqual([]);
+});

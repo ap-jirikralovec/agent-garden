@@ -15,6 +15,7 @@ import type { Agent } from '../src/shared/types.js';
 const folders: string[] = [];
 const makeAgent = (): Agent => ({
   id: randomUUID(),
+  origin: 'garden',
   provider: 'codex',
   sessionId: randomUUID(),
   name: 'Miso',

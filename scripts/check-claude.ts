@@ -38,6 +38,7 @@ try {
     const agent: Agent = {
       ...preset,
       id: randomUUID(),
+      origin: 'garden',
       provider: 'claude',
       sessionId,
       task: '',

@@ -21,6 +21,7 @@ afterEach(async () => {
 function agent(project: string): Agent {
   return {
     id: randomUUID(),
+    origin: 'garden',
     provider: 'codex',
     sessionId: randomUUID(),
     name: 'Miso',
@@ -52,25 +53,39 @@ it('persists independent projects, deduplicates paths and retains names when add
   expect(reloaded.listProjects()).toEqual([]);
 });
 
-it.each([1, 2])(
+it.each([1, 2, 3])(
   'migrates version %i agent folders and durably retains them after the last card is removed',
   async (version) => {
     const original = await store();
     const item = { ...agent('/work/legacy'), reasoning: 'medium' };
+    const legacy = { ...item, origin: undefined };
     await writeFile(
       join(original.directory, 'agents.json'),
-      JSON.stringify({ version, agents: [item], connections: {} }),
+      JSON.stringify({
+        version,
+        agents: [legacy],
+        connections: { codex: false },
+        projects: [{ path: item.project, name: 'Legacy display name' }],
+      }),
     );
     await original.load();
-    expect(original.listProjects()).toEqual([{ path: item.project, name: 'legacy' }]);
-    expect(original.list()[0].id).toBe(item.id);
+    expect(original.listProjects()).toEqual([
+      { path: item.project, name: version === 3 ? 'Legacy display name' : 'legacy' },
+    ]);
+    if (version >= 2) expect(original.providerEnabled('codex')).toBe(false);
+    expect(original.list()[0]).toMatchObject({
+      id: item.id,
+      sessionId: version === 1 ? item.id : item.sessionId,
+      origin: 'garden',
+    });
+    expect(original.showExternalAgents()).toBe(false);
     await original.remove(item.id);
     const reloaded = new AgentStore(original.directory);
     await reloaded.load();
     expect(reloaded.listProjects()).toEqual(original.listProjects());
     expect(
       JSON.parse(await readFile(join(original.directory, 'agents.json'), 'utf8')).version,
-    ).toBe(3);
+    ).toBe(4);
   },
 );
 

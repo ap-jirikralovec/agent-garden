@@ -23,6 +23,7 @@ interface ProviderRuntime {
   changing: boolean;
   actions: number;
   refreshing: Promise<void> | null;
+  discoveryError: string | null;
 }
 
 export class Garden extends EventEmitter {
@@ -54,19 +55,27 @@ export class Garden extends EventEmitter {
         changing: false,
         actions: 0,
         refreshing: null,
+        discoveryError: null,
       });
     }
   }
 
   snapshot(): Snapshot {
     return {
+      settings: { showExternalAgents: this.store.showExternalAgents() },
       projects: this.store.listProjects().map((project) => ({
         ...project,
         agentCount: this.store.list().filter((agent) => agent.project === project.path).length,
       })),
       agents: this.store
         .list()
-        .filter((agent) => this.providers.has(agent.provider))
+        .filter(
+          (agent) =>
+            this.providers.has(agent.provider) &&
+            (agent.origin !== 'external' ||
+              (this.store.showExternalAgents() &&
+                this.store.listProjects().some((project) => project.path === agent.project))),
+        )
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
       providers: this.adapters.map((adapter): ProviderSnapshot => {
         const runtime = this.providers.get(adapter.id);
@@ -80,6 +89,7 @@ export class Garden extends EventEmitter {
           connection:
             enabled && adapter.connected && !runtime?.error ? 'connected' : 'disconnected',
           error: enabled ? (runtime?.error ?? null) : null,
+          discoveryError: enabled ? (runtime?.discoveryError ?? null) : null,
         };
       }),
       error: this.error,
@@ -130,6 +140,42 @@ export class Garden extends EventEmitter {
           const configuration = await adapter.configuration();
           if (!current()) return;
           runtime.configuration = configuration;
+        }
+        if (adapter.discoverSessions && !this.creating && !runtime.actions) {
+          try {
+            const discovery = await adapter.discoverSessions(
+              this.store.listProjects().map((project) => project.path),
+              this.store.excludedSessionIds(adapter.id),
+            );
+            if (!current()) return;
+            runtime.discoveryError = discovery.warning;
+            for (const session of discovery.sessions) {
+              const imported = await this.store.importSession(
+                {
+                  ...session,
+                  id: randomUUID(),
+                  provider: adapter.id,
+                  origin: 'external',
+                  task: '',
+                  status: 'idle',
+                  connection: 'disconnected',
+                  detail: 'Waiting for a fresh observation.',
+                  lastSeen: null,
+                },
+                () => current() && !this.creating && !runtime.actions,
+              );
+              if (imported === 'full') {
+                runtime.discoveryError =
+                  'Garden supports up to 50 tracked sessions. Remove an old card to discover more.';
+                break;
+              }
+            }
+          } catch (error) {
+            if (!current()) return;
+            if (!adapter.connected) throw error;
+            runtime.discoveryError =
+              error instanceof Error ? error.message : 'Could not discover external sessions.';
+          }
         }
         for (const agent of this.store.list().filter((agent) => agent.provider === adapter.id)) {
           if (!current()) return;
@@ -254,6 +300,11 @@ export class Garden extends EventEmitter {
     }
   }
 
+  async setShowExternalAgents(enabled: boolean) {
+    await this.store.setShowExternalAgents(enabled);
+    this.emitSnapshot();
+  }
+
   async addProject(path: string) {
     const project = await checkProject(path);
     if (!project.exists) throw new Error('This project folder no longer exists. Choose it again.');
@@ -309,6 +360,7 @@ export class Garden extends EventEmitter {
       const agent: Agent = {
         id: randomUUID(),
         provider: runtime.adapter.id,
+        origin: 'garden',
         sessionId,
         name,
         project,

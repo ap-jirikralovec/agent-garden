@@ -5,6 +5,7 @@ import { hasWaitingWorker } from '../agentPresentation';
 
 export const useGardenStore = defineStore('garden', () => {
   const snapshot = ref<Snapshot>({
+    settings: { showExternalAgents: false },
     projects: [],
     agents: [],
     providers: [],

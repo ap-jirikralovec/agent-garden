@@ -59,5 +59,16 @@ unix://` applies remote trust checks, while reasoning `-c` disables daemon reuse
   Claude uses session-specific lifecycle hooks. Preserve native IDs and stale
   states, never infer completion from silence, and never submit worker messages
   or steal their sessions. Bound worker reads at 200 and show truncation.
-- The cat playground, all-session discovery, npm publication and cross-platform
-  terminal support are follow-up work, not part of this MVP.
+- Discover external Codex sessions read-only from the connected server's loaded
+  session list, only in exact saved project folders. Never import subagents as
+  top-level cards or infer open sessions from recent timestamps. Keep native IDs
+  and durable `garden`/`external` provenance separate from provider source labels.
+  Visibility is a persistent global setting (Show external agents, default off),
+  independent of discovery and monitoring. Hidden cards stay out of dashboard
+  snapshots/counts/search; project-removal guards still include them. Remember
+  removed native identities so discovery cannot immediately re-add them.
+  External terminal reopening must preserve provider settings, without Garden
+  preset restoration. Discovery is bounded at 200 loaded sessions and the existing
+  50 tracked-card limit; report truncation without treating it as disconnection.
+- The cat playground, historical/all-project discovery, npm publication and
+  cross-platform terminal support are follow-up work.

@@ -5,6 +5,7 @@ import type { Thread, Turn } from '../src/server/providers/codex/protocol.js';
 
 const agent: Agent = {
   id: 'one',
+  origin: 'garden',
   provider: 'codex',
   sessionId: 'native-one',
   name: 'Miso',

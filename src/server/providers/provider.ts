@@ -21,6 +21,16 @@ export interface SessionPreset {
   reasoning: string | null;
 }
 
+export interface DiscoveredSession extends SessionPreset {
+  sessionId: string;
+  createdAt: string;
+}
+
+export interface DiscoveryResult {
+  sessions: DiscoveredSession[];
+  warning: string | null;
+}
+
 export interface AgentProvider {
   readonly id: ProviderId;
   readonly name: string;
@@ -31,6 +41,8 @@ export interface AgentProvider {
   configuration(): Promise<ProviderConfiguration>;
   createSession(preset: SessionPreset): Promise<{ sessionId: string; warning: string | null }>;
   // Observation must never load a session, submit work, or resolve an approval.
+  // Discovery is read-only; providers without a supported listing API omit it.
+  discoverSessions?(projects: string[], excludedSessionIds: string[]): Promise<DiscoveryResult>;
   readSession(agent: Agent): Promise<AgentObservation>;
   openTerminal(agent: Agent): Promise<void>;
   close(): Promise<void>;

@@ -106,6 +106,13 @@ export async function createApp(
     const pathname = new URL(request.url ?? '/', `http://${host}`).pathname;
     if (request.method === 'GET' && pathname === '/api/state')
       return json(response, 200, garden.snapshot());
+    if (request.method === 'POST' && pathname === '/api/settings') {
+      const input = await readObject(request);
+      if (Object.keys(input).length !== 1 || typeof input.showExternalAgents !== 'boolean')
+        throw new Error('Show external agents must be true or false.');
+      await garden.setShowExternalAgents(input.showExternalAgents);
+      return json(response, 200, garden.snapshot());
+    }
     const providerPath = pathname.match(/^\/api\/providers\/([a-z][a-z0-9_-]{0,39})$/);
     if (request.method === 'POST' && providerPath) {
       if (!isProviderId(providerPath[1])) throw new Error('Unknown provider.');

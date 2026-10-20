@@ -13,7 +13,7 @@ afterEach(async () => {
   await Promise.all(cleanup.splice(0).map((close) => close()));
 });
 
-it('protects project actions, treats picker cancellation as a no-op and validates selected folders and names', async () => {
+it('protects project and settings actions, treats picker cancellation as a no-op and validates selected folders and names', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'garden-api-projects-'));
   cleanup.push(() => rm(directory, { recursive: true, force: true }));
   const store = new AgentStore(join(directory, 'metadata'));
@@ -50,6 +50,20 @@ it('protects project actions, treats picker cancellation as a no-op and validate
       req.push(null);
     });
   }
+  expect((await request('/api/settings', 'POST', { showExternalAgents: true }, {})).status).toBe(
+    403,
+  );
+  expect((await request('/api/settings', 'POST', { showExternalAgents: 'true' })).status).toBe(400);
+  expect(
+    (await request('/api/settings', 'POST', { showExternalAgents: true, discovery: false })).status,
+  ).toBe(400);
+  expect(store.showExternalAgents()).toBe(false);
+  const settings = await request('/api/settings', 'POST', { showExternalAgents: true });
+  expect(settings.status).toBe(200);
+  expect(settings.body.settings).toEqual({ showExternalAgents: true });
+  const reloaded = new AgentStore(store.directory);
+  await reloaded.load();
+  expect(reloaded.showExternalAgents()).toBe(true);
   expect((await request('/api/projects/pick', 'POST', {}, {})).status).toBe(403);
   expect(
     (

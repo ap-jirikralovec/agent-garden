@@ -41,3 +41,25 @@ conversations remain with their providers. Browser storage and the port number
 do not determine your saved data: restarting on another port uses the same file.
 Use `--data-dir PATH` for an independent dataset. Run only one Garden process per
 data directory; concurrent processes do not coordinate metadata writes.
+
+## External agents
+
+Garden automatically discovers open Codex sessions in saved project folders.
+**Settings** in the header has a global **Show external agents** switch, off by
+default. Enabling it shows external cards, counts and search results in every
+Garden window; hiding them leaves discovery and monitoring running. Garden-made
+cards carry the sprout logo, while imported cards say **External**.
+
+Discovery uses the connected Codex server's loaded-session list, including idle
+and waiting sessions, rather than scanning conversation history. Independent
+Codex servers and Claude discovery are not included. Once discovered, a card
+stays tracked when its session closes. Subagents stay nested under their parent.
+A removed card's native identity is remembered so it will not be rediscovered.
+External sessions that move outside saved folders are retained in metadata and
+shown again if their folder is saved. Discovery never adds projects itself.
+
+Checks are bounded at 200 loaded sessions and the existing 50 tracked cards.
+Settings reports discovery errors or limits separately from connection status.
+Opening an external agent uses its exact native session and preserves its Codex
+settings. Empty conversations without persisted presets follow Codex defaults
+when reopened. Discovery submits no tasks, resumes no sessions and changes no titles.

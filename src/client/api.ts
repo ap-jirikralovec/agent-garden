@@ -19,6 +19,8 @@ async function request<T>(
 
 export const gardenApi = {
   state: (signal?: AbortSignal) => request<Snapshot>('/api/state', 'GET', undefined, signal),
+  setShowExternalAgents: (showExternalAgents: boolean) =>
+    request<Snapshot>('/api/settings', 'POST', { showExternalAgents }),
   setProvider: (id: ProviderId, enabled: boolean) =>
     request<Snapshot>(`/api/providers/${id}`, 'POST', { enabled }),
   pickProject: () =>

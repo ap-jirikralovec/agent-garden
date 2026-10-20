@@ -20,6 +20,7 @@ export interface AgentWorker {
 }
 
 export interface Agent {
+  origin: 'garden' | 'external';
   id: string;
   provider: ProviderId;
   sessionId: string;
@@ -57,6 +58,7 @@ export interface ProviderSnapshot {
   connection: Connection;
   error: string | null;
   configuration: ProviderConfiguration | null;
+  discoveryError?: string | null;
 }
 
 export interface Project {
@@ -69,6 +71,7 @@ export interface ProjectSummary extends Project {
 }
 
 export interface Snapshot {
+  settings: { showExternalAgents: boolean };
   projects: ProjectSummary[];
   agents: Agent[];
   providers: ProviderSnapshot[];

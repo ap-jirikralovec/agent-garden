@@ -23,6 +23,7 @@ afterEach(async () => {
 });
 const makeAgent = (): Agent => ({
   id: randomUUID(),
+  origin: 'garden',
   provider: 'claude',
   sessionId: randomUUID(),
   name: 'Clove',

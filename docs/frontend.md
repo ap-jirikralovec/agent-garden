@@ -20,10 +20,13 @@ garden is **dashboard**. Additional gardens and a header selector are deferred.
 - `api.ts` is the typed HTTP boundary for snapshots and explicit user actions. It
   retains the server's same-origin request header. Provider and native terminal
   routing remain on the backend.
-- `components/` holds the app header, connection settings, project management, creation dialog and
+- `components/` holds the app header, connection settings, global settings, project management, creation dialog and
   provider logo. Dialog fields, errors and pending
   states stay local. Successful creation/removal requests a refresh from App;
-  connection settings and project management apply the returned snapshot to Pinia.
+  connection/global settings and project management apply the returned snapshot to Pinia.
+  Global external visibility is persisted on the backend and applied before
+  snapshots reach the client; it is not another garden-local filter. GardenIcon
+  shares the header sprout with the accessible Created in Garden card badge.
   Folder picking runs only on explicit Add project; cancellation retains the form
   and saved projects. The backend opens the native macOS picker and validates the
   selected path. No browser directory-upload or manual path input is used.

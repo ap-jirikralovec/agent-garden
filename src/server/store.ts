@@ -10,6 +10,8 @@ import {
 
 const statuses = new Set(['idle', 'working', 'waiting', 'finished', 'failed']);
 interface StoredState {
+  settings: { showExternalAgents: boolean };
+  ignoredSessions: { provider: ProviderId; sessionId: string }[];
   projects: Project[];
   agents: Agent[];
   connections: Partial<Record<ProviderId, boolean>>;
@@ -17,6 +19,8 @@ interface StoredState {
 
 export class AgentStore {
   private agents: Agent[] = [];
+  private settings = { showExternalAgents: false };
+  private ignoredSessions: StoredState['ignoredSessions'] = [];
   private projects: Project[] = [];
   private connections: Partial<Record<ProviderId, boolean>> = {};
   private queue: Promise<void> = Promise.resolve();
@@ -27,9 +31,13 @@ export class AgentStore {
     try {
       const file = JSON.parse(await readFile(join(this.directory, 'agents.json'), 'utf8'));
       if (
-        ![1, 2, 3].includes(file.version) ||
+        ![1, 2, 3, 4].includes(file.version) ||
         !Array.isArray(file.agents) ||
-        !file.agents.every((agent: unknown) => validAgent(agent, file.version === 1)) ||
+        !file.agents.every(
+          (agent: unknown) =>
+            validAgent(agent, file.version === 1) &&
+            (file.version < 4 || ['garden', 'external'].includes((agent as Agent).origin)),
+        ) ||
         (file.version >= 2 &&
           (!file.connections ||
             typeof file.connections !== 'object' ||
@@ -41,15 +49,35 @@ export class AgentStore {
         throw new Error('Unexpected metadata format');
       }
       if (
-        file.version === 3 &&
+        file.version >= 3 &&
         (!Array.isArray(file.projects) ||
           !file.projects.every(validProject) ||
           new Set(file.projects.map((p: Project) => p.path)).size !== file.projects.length)
       )
         throw new Error('Unexpected project metadata format');
-      this.projects = file.version === 3 ? file.projects : [];
+      if (
+        file.version === 4 &&
+        (!file.settings ||
+          typeof file.settings.showExternalAgents !== 'boolean' ||
+          !Array.isArray(file.ignoredSessions) ||
+          !file.ignoredSessions.every((value: unknown) => {
+            if (!value || typeof value !== 'object') return false;
+            const item = value as Record<string, unknown>;
+            return (
+              isProviderId(item.provider) &&
+              typeof item.sessionId === 'string' &&
+              item.sessionId.length > 0 &&
+              item.sessionId.length <= 4096
+            );
+          }))
+      )
+        throw new Error('Unexpected discovery settings format');
+      this.settings = file.version === 4 ? file.settings : { showExternalAgents: false };
+      this.ignoredSessions = file.version === 4 ? file.ignoredSessions : [];
+      this.projects = file.version >= 3 ? file.projects : [];
       this.agents = file.agents.map((agent: Agent) => ({
         ...agent,
+        origin: file.version < 4 ? 'garden' : agent.origin,
         provider: file.version === 1 ? 'codex' : agent.provider,
         sessionId: file.version === 1 ? agent.id : agent.sessionId,
         connection: 'disconnected',
@@ -111,16 +139,26 @@ export class AgentStore {
   async put(agent: Agent) {
     return this.mutate((state) => ({
       ...state,
-      agents: [...state.agents.filter((item) => item.id !== agent.id), agent],
+      agents: [
+        ...state.agents.filter((item) => item.id !== agent.id),
+        { ...agent, origin: agent.origin ?? 'garden' },
+      ],
       projects: includeAgentProjects(state.projects, [agent]),
     }));
   }
 
   async remove(id: string) {
-    return this.mutate((state) => ({
-      ...state,
-      agents: state.agents.filter((agent) => agent.id !== id),
-    }));
+    return this.mutate((state) => {
+      const agent = state.agents.find((agent) => agent.id === id);
+      const ignoredSessions =
+        agent &&
+        !state.ignoredSessions.some(
+          (item) => item.provider === agent.provider && item.sessionId === agent.sessionId,
+        )
+          ? [...state.ignoredSessions, { provider: agent.provider, sessionId: agent.sessionId }]
+          : state.ignoredSessions;
+      return { ...state, ignoredSessions, agents: state.agents.filter((agent) => agent.id !== id) };
+    });
   }
 
   async update(id: string, update: Partial<Agent>) {
@@ -130,6 +168,47 @@ export class AgentStore {
       );
       return { ...state, agents, projects: includeAgentProjects(state.projects, agents) };
     });
+  }
+
+  showExternalAgents() {
+    return this.settings.showExternalAgents;
+  }
+
+  async setShowExternalAgents(showExternalAgents: boolean) {
+    return this.mutate((state) => ({ ...state, settings: { showExternalAgents } }));
+  }
+
+  excludedSessionIds(provider: ProviderId) {
+    return [...this.agents, ...this.ignoredSessions]
+      .filter((item) => item.provider === provider)
+      .map((item) => item.sessionId);
+  }
+
+  async importSession(agent: Agent, current: () => boolean): Promise<'added' | 'skipped' | 'full'> {
+    if (
+      agent.origin !== 'external' ||
+      !validAgent(agent, false) ||
+      !validProject({ path: agent.project, name: agent.name })
+    )
+      throw new Error('The provider returned invalid session metadata.');
+    let result: 'added' | 'skipped' | 'full' = 'skipped';
+    await this.mutate((state) => {
+      if (
+        !current() ||
+        !state.projects.some((project) => project.path === agent.project) ||
+        [...state.agents, ...state.ignoredSessions].some(
+          (item) => item.provider === agent.provider && item.sessionId === agent.sessionId,
+        )
+      )
+        return state;
+      if (state.agents.length >= 50) {
+        result = 'full';
+        return state;
+      }
+      result = 'added';
+      return { ...state, agents: [...state.agents, agent] };
+    });
+    return result;
   }
 
   providerEnabled(id: ProviderId) {
@@ -149,6 +228,8 @@ export class AgentStore {
         agents: this.agents,
         connections: this.connections,
         projects: this.projects,
+        settings: this.settings,
+        ignoredSessions: this.ignoredSessions,
       };
       const next = change(previous);
       // Seeing the same state again updates the live timestamp without rewriting
@@ -163,15 +244,19 @@ export class AgentStore {
           })),
           connections: state.connections,
           projects: state.projects,
+          settings: state.settings,
+          ignoredSessions: state.ignoredSessions,
         });
       if (durable(next) !== durable(previous)) {
         const target = join(this.directory, 'agents.json');
         const temporary = target + '.tmp';
-        await writeFile(temporary, JSON.stringify({ version: 3, ...next }, null, 2) + '\n', {
+        await writeFile(temporary, JSON.stringify({ version: 4, ...next }, null, 2) + '\n', {
           mode: 0o600,
         });
         await rename(temporary, target);
       }
+      this.settings = next.settings;
+      this.ignoredSessions = next.ignoredSessions;
       this.projects = next.projects;
       this.agents = next.agents;
       this.connections = next.connections;
@@ -222,9 +307,13 @@ function validWorker(value: unknown): value is AgentWorker {
   );
 }
 
-function includeAgentProjects(projects: Project[], agents: { project: string }[]): Project[] {
+function includeAgentProjects(
+  projects: Project[],
+  agents: { project: string; origin?: Agent['origin'] }[],
+): Project[] {
   const saved = new Map(projects.map((project) => [project.path, project]));
-  for (const { project: path } of agents) {
+  for (const { project: path, origin } of agents) {
+    if (origin === 'external') continue;
     if (!saved.has(path)) saved.set(path, { path, name: (basename(path) || path).slice(0, 60) });
   }
   return [...saved.values()];

@@ -17,6 +17,7 @@ afterEach(async () => {
 });
 const parent = (): Agent => ({
   id: randomUUID(),
+  origin: 'garden',
   provider: 'codex',
   sessionId: randomUUID(),
   name: 'Lead',

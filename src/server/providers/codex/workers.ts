@@ -32,7 +32,7 @@ export async function readCodexWorkers(
   const candidates = new Map(threads.slice(0, 200).map((thread) => [thread.id, thread]));
   const descendants = new Map<string, string>();
   const parentOf = (thread: Thread) =>
-    typeof thread.source === 'object'
+    thread.source && typeof thread.source === 'object' && typeof thread.source.subAgent === 'object'
       ? thread.source.subAgent?.thread_spawn?.parent_thread_id
       : undefined;
   // Also validate lineage locally so an ignored/unsupported filter cannot import

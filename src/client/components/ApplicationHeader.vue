@@ -2,9 +2,12 @@
 import { ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useGardenStore } from '../stores/garden';
+import GardenIcon from './GardenIcon.vue';
+import SettingsDialog from './SettingsDialog.vue';
 import ProjectsDialog from './ProjectsDialog.vue';
 import ConnectionsDialog from './ConnectionsDialog.vue';
 const emit = defineEmits<{ addAgent: [] }>();
+const settings = ref<InstanceType<typeof SettingsDialog>>();
 const projects = ref<InstanceType<typeof ProjectsDialog>>();
 const { browserConnected, connectedCount, connectionsEnabled, monitorReady, loaded } =
   storeToRefs(useGardenStore());
@@ -14,19 +17,11 @@ const connections = ref<InstanceType<typeof ConnectionsDialog>>();
 <template>
   <header class="topbar">
     <a class="brand" href="/" aria-label="Agent Garden home">
-      <span class="brand-mark" aria-hidden="true"
-        ><svg viewBox="0 0 32 32" fill="none">
-          <path
-            d="M16 26V15M16 20C7 20 5 13 6 7c7 0 11 4 10 13ZM16 16C16 8 21 5 27 6c0 7-4 11-11 10Z"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          /></svg
-      ></span>
+      <span class="brand-mark" aria-hidden="true"><GardenIcon /></span>
       <span>agent<span class="brand-light">garden</span><small>LOCAL WORKSPACE</small></span>
     </a>
     <div class="header-actions">
+      <button class="secondary" :disabled="!loaded" @click="settings?.open()">Settings</button>
       <button class="secondary" :disabled="!loaded || !browserConnected" @click="projects?.open()">
         Projects
       </button>
@@ -50,6 +45,7 @@ const connections = ref<InstanceType<typeof ConnectionsDialog>>();
       </button>
     </div>
   </header>
+  <SettingsDialog ref="settings" />
   <ProjectsDialog ref="projects" />
   <ConnectionsDialog ref="connections" />
 </template>
@@ -58,6 +54,7 @@ const connections = ref<InstanceType<typeof ConnectionsDialog>>();
 @use '../styles/tokens' as tokens;
 .topbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--color-border);

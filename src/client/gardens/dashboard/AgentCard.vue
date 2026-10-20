@@ -354,12 +354,12 @@ async function remove(agent: Agent) {
 .agent-card.needs-input {
   border-color: #c99b3d;
   box-shadow: 0 0 0 1px #c99b3d35;
-  background: linear-gradient(#fff9eb, #fff 130px);
+  background: #fffbf5;
 }
 .agent-card.response-finished {
   border-color: #83a575;
   box-shadow: 0 0 0 1px #83a57525;
-  background: linear-gradient(#f2f8eb, #fff 130px);
+  background: #f5f8f1;
 }
 .card-attention {
   display: flex;

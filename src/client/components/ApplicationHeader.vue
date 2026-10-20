@@ -23,8 +23,7 @@ const connections = ref<InstanceType<typeof ConnectionsDialog>>();
       <span>agent<span class="brand-light">garden</span><small>LOCAL WORKSPACE</small></span>
     </a>
     <div class="header-actions">
-      <button class="secondary settings-button" @click="connections?.open()">⚙ Connections</button
-      ><span class="local-tag"
+      <span class="local-tag" @click="connections?.open()"
         ><span class="dot" :class="browserConnected && connectedCount ? 'green' : 'amber'"></span
         >{{
           !browserConnected
@@ -42,11 +41,18 @@ const connections = ref<InstanceType<typeof ConnectionsDialog>>();
 <style scoped lang="scss">
 @use '../styles/tokens' as tokens;
 .topbar {
-  height: 112px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--color-border);
+  background: #ffffff;
+  margin-top: 0.5rem;
+  padding-block: 1.25rem;
+  padding-inline: 0.75rem;
+  margin-inline: -0.75rem;
+  border-radius: 1.25rem;
+  position: sticky;
+  top: 0.5rem;
 }
 .brand {
   text-decoration: none;
@@ -91,6 +97,7 @@ const connections = ref<InstanceType<typeof ConnectionsDialog>>();
   border: 1px solid #e0e7d6;
   border-radius: 30px;
   padding: 9px 13px;
+  cursor: pointer;
 }
 @include tokens.mobile {
   .topbar {
@@ -117,18 +124,9 @@ const connections = ref<InstanceType<typeof ConnectionsDialog>>();
   align-items: center;
   gap: var(--space-3);
 }
-.settings-button {
-  min-height: 35px;
-  padding: var(--space-2) var(--space-3);
-  font-size: 12px;
-}
 @include tokens.mobile {
   .header-actions {
     gap: 7px;
-  }
-  .settings-button {
-    font-size: 10px;
-    padding: var(--space-2);
   }
   .header-actions .local-tag {
     display: none;

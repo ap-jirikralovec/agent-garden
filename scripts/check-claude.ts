@@ -16,16 +16,37 @@ try {
   const cli = new ClaudeCli('claude', directory, { ...process.env, CLAUDE_CONFIG_DIR: directory });
   const commands: TerminalCommand[] = [];
   const adapter = new ClaudeProvider(cli, new ClaudeObservations(directory), {
-    async open(_id, command) { commands.push(command); }, async focus() { return false; },
+    async open(_id, command) {
+      commands.push(command);
+    },
+    async focus() {
+      return false;
+    },
   });
   try {
     await adapter.connect();
     const config = await adapter.configuration();
     assert.ok(config.models.length);
-    const model = config.models.find(model => model.id === config.defaultModel)!;
-    const preset = { name: 'Clove smoke check', project: directory, model: model.id, reasoning: model.defaultReasoning };
+    const model = config.models.find((model) => model.id === config.defaultModel)!;
+    const preset = {
+      name: 'Clove smoke check',
+      project: directory,
+      model: model.id,
+      reasoning: model.defaultReasoning,
+    };
     const { sessionId, warning } = await adapter.createSession(preset);
-    const agent: Agent = { ...preset, id: randomUUID(), provider: 'claude', sessionId, task: '', status: 'idle', connection: 'disconnected', lastSeen: null, detail: null, createdAt: new Date().toISOString() };
+    const agent: Agent = {
+      ...preset,
+      id: randomUUID(),
+      provider: 'claude',
+      sessionId,
+      task: '',
+      status: 'idle',
+      connection: 'disconnected',
+      lastSeen: null,
+      detail: null,
+      createdAt: new Date().toISOString(),
+    };
     assert.equal(warning, null);
     assert.notEqual(agent.id, agent.sessionId);
     await adapter.openTerminal(agent);
@@ -34,6 +55,12 @@ try {
     await adapter.openTerminal(agent);
     assert.equal(commands[1].args[1], agent.sessionId);
     assert.deepEqual(await cli.sessions(), []);
-    console.log(`Dormant Claude adapter model discovery and exact-ID preset routing passed (${config.models.length} models). No task or inference submitted. Claude stays disabled in Garden.`);
-  } finally { await adapter.close(); }
-} finally { await rm(directory, { recursive: true, force: true }); }
+    console.log(
+      `Dormant Claude adapter model discovery and exact-ID preset routing passed (${config.models.length} models). No task or inference submitted. Claude stays disabled in Garden.`,
+    );
+  } finally {
+    await adapter.close();
+  }
+} finally {
+  await rm(directory, { recursive: true, force: true });
+}

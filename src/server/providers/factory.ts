@@ -12,7 +12,12 @@ import type { AgentProvider } from './provider.js';
 async function findExecutable(name: string) {
   for (const directory of (process.env.PATH ?? '').split(delimiter)) {
     const path = join(directory, name);
-    try { await access(path, constants.X_OK); return await realpath(path); } catch { /* Continue searching PATH. */ }
+    try {
+      await access(path, constants.X_OK);
+      return await realpath(path);
+    } catch {
+      /* Continue searching PATH. */
+    }
   }
   return name;
 }
@@ -22,6 +27,10 @@ export async function createProviders(directory: string): Promise<AgentProvider[
   const [codex, claude] = await Promise.all([findExecutable('codex'), findExecutable('claude')]);
   return [
     new CodexProvider(new CodexRpc({ command: codex }), terminal, codex),
-    new ClaudeProvider(new ClaudeCli(claude, directory), new ClaudeObservations(directory), terminal),
+    new ClaudeProvider(
+      new ClaudeCli(claude, directory),
+      new ClaudeObservations(directory),
+      terminal,
+    ),
   ];
 }

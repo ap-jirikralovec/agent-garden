@@ -1,7 +1,18 @@
 import type { Agent, ProviderConfiguration, ProviderId } from '../../shared/types.js';
 
-export type AgentObservation = Pick<Agent,
-  'project' | 'model' | 'reasoning' | 'status' | 'task' | 'connection' | 'detail' | 'lastSeen' | 'workers' | 'workersError'>;
+export type AgentObservation = Pick<
+  Agent,
+  | 'project'
+  | 'model'
+  | 'reasoning'
+  | 'status'
+  | 'task'
+  | 'connection'
+  | 'detail'
+  | 'lastSeen'
+  | 'workers'
+  | 'workersError'
+>;
 
 export interface SessionPreset {
   name: string;

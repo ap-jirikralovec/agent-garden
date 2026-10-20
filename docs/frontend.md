@@ -1,0 +1,62 @@
+# Frontend architecture
+
+Agent Garden uses Vue Composition API, TypeScript, Pinia and SCSS. The current
+garden is **dashboard**. Additional gardens and a header selector are deferred.
+
+- `App.vue` owns the application subscription and explicit refresh requests. It
+  renders the shared header and `DashboardGarden`; it contains no card, filtering
+  or form logic.
+- `gardenSync.ts` manages the subscription lifetime. SSE supplies snapshots, with
+  an initial HTTP fetch and a five-second polling fallback while SSE is down.
+  EventSource reconnects automatically; the next valid stream snapshot stops
+  fallback polling. Reads time out after ten seconds and never overlap. A newer
+  snapshot invalidates an older pending HTTP response. Unmount closes the stream,
+  aborts pending reads and clears polling.
+- `stores/garden.ts` owns the last snapshot, loading/connectivity state, notices
+  and shared derived state, including provider availability and overview counts.
+  Disconnecting retains the snapshot and saved identities. Components use
+  `storeToRefs` for reactive state and store actions for shared updates.
+- `api.ts` is the typed HTTP boundary for snapshots and explicit user actions. It
+  retains the server's same-origin request header. Provider and native terminal
+  routing remain on the backend.
+- `components/` holds the app header, connection settings, creation dialog and
+  provider logo. Dialog fields, path-check versions, consent, errors and pending
+  states stay local. Successful creation/removal requests a refresh from App;
+  connection settings apply the returned snapshot to Pinia.
+- `gardens/dashboard/` owns dashboard layout, overview, filters, cards, subagent
+  dialogs and view helpers. Search, status/provider filters and project grouping
+  are local view state. A garden consumes shared state without starting another
+  monitor or copying the snapshot into local refs.
+
+## Styling
+
+Use `<style scoped lang="scss">` for component-owned styles. `styles/main.scss`
+loads the small global foundation: base/reset/accessibility rules and shared
+controls, forms, status badges and native dialogs. `_tokens.scss` owns the shared
+palette, spacing scale, radii and responsive mixins through modern Sass `@use`.
+Use existing tokens for recurring values; keep unique illustration and component
+details local. Avoid global selectors for garden-specific elements.
+
+This refactor preserves the current appearance. Theme selection, a theme registry,
+additional gardens and a new component library are outside this change.
+
+## Formatting and linting
+
+ESLint's flat config covers Vue, TypeScript and JavaScript across client, server,
+scripts, tests and configuration. Recommended Vue/TypeScript rules check code;
+Prettier owns formatting, with `eslint-config-prettier` preventing rule conflicts.
+Prettier also formats SCSS, HTML, JSON and documentation. Generated output, vendor
+assets and the npm lockfile are excluded from formatting.
+
+```sh
+npm run lint
+npm run lint:fix
+npm run format
+npm run format:check
+```
+
+The committed `.vscode/settings.json` enables Prettier format-on-save and ESLint
+fixes on manual save and Auto Save in VS Code-compatible editors. Install the
+workspace-recommended Prettier, ESLint and Vue extensions when prompted. Other
+editors can use the same repo configs; their save hooks need editor-specific
+integration. No global editor preferences are changed.

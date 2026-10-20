@@ -14,38 +14,69 @@ export class CodexRpc implements Rpc {
   private socket: WebSocket | null = null;
   private sequence = 0;
   private connecting: Promise<void> | null = null;
-  private pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
+  private pending = new Map<
+    number,
+    { resolve(value: unknown): void; reject(error: Error): void; timer: NodeJS.Timeout }
+  >();
 
-  constructor(private options: { command?: string; args?: string[]; env?: NodeJS.ProcessEnv; startDaemon?: boolean; timeout?: number; transport?: 'websocket' | 'stdio' } = {}) {}
+  constructor(
+    private options: {
+      command?: string;
+      args?: string[];
+      env?: NodeJS.ProcessEnv;
+      startDaemon?: boolean;
+      timeout?: number;
+      transport?: 'websocket' | 'stdio';
+    } = {},
+  ) {}
 
   async connect(): Promise<void> {
     if (this.connected) return;
     if (this.connecting) return this.connecting;
-    this.connecting = this.open().finally(() => { this.connecting = null; });
+    this.connecting = this.open().finally(() => {
+      this.connecting = null;
+    });
     return this.connecting;
   }
 
   private async open() {
     if (this.options.startDaemon !== false) {
       try {
-        await promisify(execFile)(this.options.command ?? 'codex', ['app-server', 'daemon', 'start'], {
-          env: this.options.env ?? process.env, timeout: 15000, maxBuffer: 64 * 1024,
-        });
+        await promisify(execFile)(
+          this.options.command ?? 'codex',
+          ['app-server', 'daemon', 'start'],
+          {
+            env: this.options.env ?? process.env,
+            timeout: 15000,
+            maxBuffer: 64 * 1024,
+          },
+        );
       } catch {
-        throw new Error('Could not start the Codex session server. Run `codex` in a terminal, then leave Garden running to retry.');
+        throw new Error(
+          'Could not start the Codex session server. Run `codex` in a terminal, then leave Garden running to retry.',
+        );
       }
     }
-    const child = spawn(this.options.command ?? 'codex', this.options.args ?? ['app-server', 'proxy'], {
-      env: this.options.env ?? process.env, stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    const child = spawn(
+      this.options.command ?? 'codex',
+      this.options.args ?? ['app-server', 'proxy'],
+      {
+        env: this.options.env ?? process.env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      },
+    );
     this.child = child;
     // Drain diagnostics without forwarding local configuration or conversation content.
     child.stderr.resume();
-    child.once('error', () => this.lost(child, 'Could not launch Codex. Install Codex CLI and ensure `codex` is on PATH.'));
-    child.once('exit', () => this.lost(child, 'Connection to Codex was lost. Retrying automatically.'));
+    child.once('error', () =>
+      this.lost(child, 'Could not launch Codex. Install Codex CLI and ensure `codex` is on PATH.'),
+    );
+    child.once('exit', () =>
+      this.lost(child, 'Connection to Codex was lost. Retrying automatically.'),
+    );
     try {
       if (this.options.transport === 'stdio') {
-        createInterface({ input: child.stdout }).on('line', line => this.receive(line));
+        createInterface({ input: child.stdout }).on('line', (line) => this.receive(line));
       } else {
         // `app-server proxy` forwards raw bytes to the daemon's Unix socket.
         // That socket expects an HTTP Upgrade followed by WebSocket frames, not JSONL.
@@ -56,13 +87,19 @@ export class CodexRpc implements Rpc {
           perMessageDeflate: false,
         });
         this.socket = socket;
-        socket.on('message', data => this.receive(data.toString()));
-        socket.on('error', error => this.lost(child, `Codex WebSocket connection failed: ${error.message}`));
-        socket.on('close', () => this.lost(child, 'Codex closed its monitoring connection. Retrying automatically.'));
+        socket.on('message', (data) => this.receive(data.toString()));
+        socket.on('error', (error) =>
+          this.lost(child, `Codex WebSocket connection failed: ${error.message}`),
+        );
+        socket.on('close', () =>
+          this.lost(child, 'Codex closed its monitoring connection. Retrying automatically.'),
+        );
         await new Promise<void>((resolve, reject) => {
           socket.once('open', resolve);
           socket.once('error', reject);
-          socket.once('close', () => reject(new Error('Codex closed the connection during initialization.')));
+          socket.once('close', () =>
+            reject(new Error('Codex closed the connection during initialization.')),
+          );
         });
       }
       await this.send('initialize', {
@@ -79,7 +116,11 @@ export class CodexRpc implements Rpc {
 
   private receive(line: string) {
     let message: { id?: number; error?: { message: string }; result?: unknown };
-    try { message = JSON.parse(line); } catch { return; }
+    try {
+      message = JSON.parse(line);
+    } catch {
+      return;
+    }
     if (typeof message.id !== 'number') return;
     const request = this.pending.get(message.id);
     if (!request) return;
@@ -102,7 +143,8 @@ export class CodexRpc implements Rpc {
   private send(method: string, params: Record<string, unknown>): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const child = this.child;
-      if (!child || child.stdin.destroyed) return reject(new Error('Codex connection is unavailable.'));
+      if (!child || child.stdin.destroyed)
+        return reject(new Error('Codex connection is unavailable.'));
       const id = ++this.sequence;
       const timer = setTimeout(() => {
         this.pending.delete(id);
@@ -110,7 +152,7 @@ export class CodexRpc implements Rpc {
         this.close();
       }, this.options.timeout ?? 12000);
       this.pending.set(id, { resolve, reject, timer });
-      this.write(JSON.stringify({ id, method, params }), error => {
+      this.write(JSON.stringify({ id, method, params }), (error) => {
         if (error) this.lost(child, 'Could not write to the Codex connection.');
       });
     });
@@ -143,11 +185,17 @@ export class CodexRpc implements Rpc {
       request.reject(new Error('Garden disconnected from Codex.'));
     }
     this.pending.clear();
-    await new Promise<void>(resolve => {
+    await new Promise<void>((resolve) => {
       const fallback = setTimeout(() => child.kill(), 2000);
-      child.once('close', () => { clearTimeout(fallback); resolve(); });
+      child.once('close', () => {
+        clearTimeout(fallback);
+        resolve();
+      });
       if (socket?.readyState === WebSocket.OPEN) socket.close();
-      else { socket?.terminate(); child.stdin.end(); }
+      else {
+        socket?.terminate();
+        child.stdin.end();
+      }
     });
   }
 }

@@ -6,7 +6,8 @@ it('initializes and reconnects through a daemon proxy that requires WebSocket fr
   const rpc = new CodexRpc({
     command: process.execPath,
     args: [fileURLToPath(new URL('./fixtures/websocket-proxy.mjs', import.meta.url))],
-    startDaemon: false, timeout: 1000,
+    startDaemon: false,
+    timeout: 1000,
   });
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -16,5 +17,7 @@ it('initializes and reconnects through a daemon proxy that requires WebSocket fr
       await rpc.close();
       expect(rpc.connected).toBe(false);
     }
-  } finally { await rpc.close(); }
+  } finally {
+    await rpc.close();
+  }
 });

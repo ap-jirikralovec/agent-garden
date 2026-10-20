@@ -491,3 +491,35 @@ SonarQube is unavailable. No model inference was submitted by verification.
 Deviation from initial plan: None. The empty-session preset behavior is an observed
 provider limitation; native provider behavior is preserved. Restart Garden and
 reload browser windows for the new routes and snapshot schema.
+
+## WSL2 platform support — 2026-10-20
+
+Approved scope: run Garden, Node and Codex inside one WSL2 distribution; use a
+Windows browser and Windows Terminal. Project folders must be in that same WSL
+filesystem. Native Windows processes/paths and Windows-drive projects are later
+work. Keep Codex session semantics and the macOS launch path intact.
+
+The host platform boundary selects macOS or WSL for folder selection, terminal
+opening, browser opening and metadata location. WSL asks Windows PowerShell to
+show a folder-only dialog with New Folder enabled, accepts only UNC paths for
+the current distribution, and converts them to Linux paths before existing
+project validation. Garden writes a private quoted shell launcher and opens it
+through `wt.exe` and `wsl.exe` in the same distribution. The script path and
+distribution are encoded as data in the PowerShell call. WSL metadata defaults
+to `XDG_DATA_HOME/Agent Garden`, or `~/.local/share/Agent Garden`. macOS keeps
+its legacy metadata lookup and `.command` launch files.
+
+Verification on the available macOS host: 58 tests pass, including WSL path
+rejection/conversion, picker cancellation/error behavior, launcher quoting and
+distribution routing. Type checks, ESLint, Prettier, build, Codex no-inference
+smoke and dormant Claude no-inference smoke pass. These checks do not prove a
+Windows host can display the folder dialog or create and reopen a Codex terminal.
+That host workflow remains the acceptance check: choose/create a WSL project,
+create an agent, open its exact session in Windows Terminal, submit a small task,
+observe status, reopen the same session, and restart Garden to check persistence.
+
+The macOS terminal button uses Launch Services for `.command` files and falls
+back to Terminal.app only if opening via the association fails. A read-only host
+check of the `.command` association returned Terminal.app. iTerm2's documented
+“Make iTerm2 Default Term” action changes that association; Garden does not
+override the user's system setting.

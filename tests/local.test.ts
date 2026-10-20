@@ -64,7 +64,7 @@ it('passes a project path with quotes and shell syntax literally to the exact se
     sessionId: "native'$(printf INJECTED)",
     project: "/tmp/it's a $(printf INJECTED) project",
   };
-  const { stdout } = await promisify(execFile)('/bin/zsh', [
+  const { stdout } = await promisify(execFile)('/bin/sh', [
     '-c',
     launchScript(codexCommand(agent, '/bin/echo', '/tmp/codex home')),
   ]);

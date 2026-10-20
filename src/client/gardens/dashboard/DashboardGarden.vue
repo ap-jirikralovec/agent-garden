@@ -139,7 +139,7 @@ function clearFilters() {
         <button class="primary" :disabled="!monitorReady" @click="emit('addAgent')">
           ＋ Add your first agent
         </button>
-        <small>Local to your Mac. Conversations stay in your terminal.</small>
+        <small>Local to your computer. Conversations stay in your terminal.</small>
       </div>
       <div
         v-else-if="!visible.length && !(groupByProject && groups.length)"
@@ -206,7 +206,7 @@ function clearFilters() {
       </div>
     </section>
     <footer class="page-footer">
-      <span><span class="dot green"></span> Everything happens on your Mac</span
+      <span><span class="dot green"></span> Everything happens on your computer</span
       ><span>Conversations stay in your terminal <span aria-hidden="true">↗</span></span>
     </footer>
   </main>

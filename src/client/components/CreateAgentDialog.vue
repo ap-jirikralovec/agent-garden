@@ -157,7 +157,7 @@ defineExpose({ open });
         :disabled="creating || picking || !browserConnected"
         @click="addProject"
       >
-        {{ picking ? 'Choose a folder on your Mac…' : '＋ Add project' }}
+        {{ picking ? 'Choose a project folder…' : '＋ Add project' }}
       </button>
       <div class="form-columns">
         <label class="form-label" for="agent-model"

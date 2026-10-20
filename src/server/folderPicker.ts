@@ -1,5 +1,13 @@
 import { execFile } from 'node:child_process';
+import { homedir } from 'node:os';
 import { promisify } from 'node:util';
+import {
+  hostPlatform,
+  isWindowsDriveMount,
+  runWindowsScript,
+  wslDistroName,
+  type HostPlatform,
+} from './platform.js';
 
 const execute = promisify(execFile);
 let picking = false;
@@ -20,21 +28,70 @@ panel.allowsMultipleSelection = false;
 panel.runModal === $.NSModalResponseOK ? ObjC.unwrap(panel.URL.path) : '';
 `;
 
-export async function pickProjectFolder(): Promise<string | null> {
-  if (process.platform !== 'darwin') throw new Error('Folder selection currently requires macOS.');
-  if (picking) throw new Error('A folder picker is already open. Finish that selection first.');
-  picking = true;
+export function wslFolderPath(selected: string, distro: string): string {
+  const match = /^\\\\(?:wsl\$|wsl\.localhost)\\([^\\]+)(?:\\(.*))?$/i.exec(selected);
+  if (!match || match[1].toLowerCase() !== distro.toLowerCase())
+    throw new Error('Select a folder in the current WSL distribution.');
+  const parts = (match[2] ?? '').split('\\').filter(Boolean);
+  // eslint-disable-next-line no-control-regex -- Reject invalid selected path components.
+  if (parts.some((part) => part === '.' || part === '..' || /[\x00-\x1f]/.test(part)))
+    throw new Error('The selected WSL folder path is invalid.');
+  const path = '/' + parts.join('/');
+  if (isWindowsDriveMount(path))
+    throw new Error('Select a folder in the WSL filesystem, not a mounted Windows drive.');
+  return path;
+}
+
+async function pickWslFolder(env: NodeJS.ProcessEnv): Promise<string | null> {
+  const distro = wslDistroName(env);
+  const initial = `\\\\wsl.localhost\\${distro}\\${homedir().replace(/^\//, '').replaceAll('/', '\\')}`;
+  const payload = Buffer.from(JSON.stringify({ initial }), 'utf8').toString('base64');
+  const source = `
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Windows.Forms
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$inputData = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')) | ConvertFrom-Json
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = 'Choose a project folder in WSL'
+$dialog.ShowNewFolderButton = $true
+$dialog.SelectedPath = $inputData.initial
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+  [Console]::WriteLine($dialog.SelectedPath)
+}
+`;
+  let selected: string;
   try {
-    const { stdout } = await execute('/usr/bin/osascript', ['-l', 'JavaScript', '-e', script], {
-      timeout: 300000,
-      maxBuffer: 16384,
-    });
-    // Remove only osascript's final newline; spaces can be part of a folder name.
-    return stdout.replace(/\r?\n$/, '') || null;
+    selected = (await runWindowsScript(source, 300000)).replace(/\r?\n$/, '');
   } catch (error) {
     throw new Error('Could not select a project folder. Close the picker and try again.', {
       cause: error,
     });
+  }
+  return selected ? wslFolderPath(selected, distro) : null;
+}
+
+export async function pickProjectFolder(
+  platform: HostPlatform = hostPlatform(),
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<string | null> {
+  if (platform === 'unsupported')
+    throw new Error('Folder selection is unsupported on this system.');
+  if (picking) throw new Error('A folder picker is already open. Finish that selection first.');
+  picking = true;
+  try {
+    if (platform === 'wsl') return await pickWslFolder(env);
+    try {
+      const { stdout } = await execute('/usr/bin/osascript', ['-l', 'JavaScript', '-e', script], {
+        timeout: 300000,
+        maxBuffer: 16384,
+      });
+      // Remove only osascript's final newline; spaces can be part of a folder name.
+      return stdout.replace(/\r?\n$/, '') || null;
+    } catch (error) {
+      throw new Error('Could not select a project folder. Close the picker and try again.', {
+        cause: error,
+      });
+    }
   } finally {
     picking = false;
   }

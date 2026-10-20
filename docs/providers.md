@@ -50,8 +50,10 @@ before a toggle may close their connection.
 The Codex adapter owns RPC, protocol types, status translation, and cold-session
 restoration under `src/server/providers/codex`. It uses normal local daemon resume,
 with no model/reasoning CLI overrides or explicit remote endpoint. The generic
-macOS `TerminalLauncher` only quotes a command/environment/working directory and opens a private
-`.command` file; it knows no provider flags.
+`TerminalLauncher` only quotes a command/environment/working directory and opens a private
+launcher through the host platform; it knows no provider flags. macOS uses a
+`.command` file. WSL uses a private shell script opened in Windows Terminal in the
+same distribution.
 
 The Claude adapter uses `claude agents --json --all` once per poll for structured
 state, keeping job IDs (attachment) separate from full session UUIDs (identity).

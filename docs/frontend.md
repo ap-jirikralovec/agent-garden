@@ -28,7 +28,7 @@ garden is **dashboard**. Additional gardens and a header selector are deferred.
   snapshots reach the client; it is not another garden-local filter. GardenIcon
   shares the header sprout with the accessible Created in Garden card badge.
   Folder picking runs only on explicit Add project; cancellation retains the form
-  and saved projects. The backend opens the native macOS picker and validates the
+  and saved projects. The backend opens the host folder picker and validates the
   selected path. No browser directory-upload or manual path input is used.
 - `gardens/dashboard/` owns dashboard layout, overview, filters, cards, subagent
   dialogs and view helpers. Search, status/provider filters, empty-project visibility and project grouping

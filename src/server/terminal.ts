@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
+import { hostPlatform, runWindowsScript, wslDistroName, type HostPlatform } from './platform.js';
 
 const execute = promisify(execFile);
 
@@ -16,7 +17,11 @@ export interface TerminalCommand {
   cwd?: string;
 }
 
-export function launchScript(command: TerminalCommand, ttyFile?: string): string {
+export function launchScript(
+  command: TerminalCommand,
+  ttyFile?: string,
+  shell = '/bin/zsh',
+): string {
   const environment = Object.entries(command.env ?? {})
     .map(([key, value]) => {
       if (!/^[a-z_][a-z0-9_]*$/i.test(key))
@@ -25,17 +30,22 @@ export function launchScript(command: TerminalCommand, ttyFile?: string): string
     })
     .join('');
   const args = [command.executable, ...command.args];
-  const directory = command.cwd ? `cd -- ${shellQuote(command.cwd)} || exit 1\n` : '';
+  const directory = command.cwd ? `cd ${shellQuote(command.cwd)} || exit 1\n` : '';
   const rememberTerminal = ttyFile
     ? `tty > ${shellQuote(ttyFile)}\nprintf '%s\\n' "$$" > ${shellQuote(ttyFile + '.pid')}\n`
     : '';
-  return `#!/bin/zsh\n${environment}${directory}${rememberTerminal}exec ${args.map(shellQuote).join(' ')}\n`;
+  return `#!${shell}\n${environment}${directory}${rememberTerminal}exec ${args.map(shellQuote).join(' ')}\n`;
 }
 
 export class TerminalLauncher {
-  constructor(private directory: string) {}
+  constructor(
+    private directory: string,
+    private platform: HostPlatform = hostPlatform(),
+    private env: NodeJS.ProcessEnv = process.env,
+  ) {}
 
   async focus(id: string, expectedPid?: number): Promise<boolean> {
+    if (this.platform !== 'macos') return false;
     if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('Invalid Garden agent identifier.');
     if (!Number.isSafeInteger(expectedPid) || !expectedPid || expectedPid < 1) return false;
     let tty: string;
@@ -74,14 +84,43 @@ end run`;
   }
 
   async open(id: string, command: TerminalCommand): Promise<void> {
-    if (process.platform !== 'darwin')
-      throw new Error('Opening terminals is currently supported on macOS only.');
+    if (this.platform === 'unsupported')
+      throw new Error('Opening terminals is unsupported on this system.');
     if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('Invalid Garden agent identifier.');
     const directory = join(this.directory, 'launchers');
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    const path = join(directory, `${id}.command`);
-    await writeFile(path, launchScript(command, join(directory, `${id}.tty`)), { mode: 0o700 });
+    const path = join(directory, `${id}.${this.platform === 'wsl' ? 'sh' : 'command'}`);
+    await writeFile(
+      path,
+      launchScript(
+        command,
+        this.platform === 'macos' ? join(directory, `${id}.tty`) : undefined,
+        this.platform === 'wsl' ? '/bin/sh' : '/bin/zsh',
+      ),
+      { mode: 0o700 },
+    );
     await chmod(path, 0o700);
+    if (this.platform === 'wsl') {
+      const payload = Buffer.from(
+        JSON.stringify({ distro: wslDistroName(this.env), script: path }),
+        'utf8',
+      ).toString('base64');
+      const source = `
+$ErrorActionPreference = 'Stop'
+$inputData = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')) | ConvertFrom-Json
+if (-not (Get-Command wt.exe -ErrorAction SilentlyContinue)) { throw 'Windows Terminal is unavailable.' }
+& wt.exe -w 0 new-tab wsl.exe --distribution $inputData.distro --exec /bin/sh $inputData.script
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+`;
+      try {
+        await runWindowsScript(source);
+      } catch {
+        throw new Error(
+          'Could not open Windows Terminal. Your session is saved; retry Open terminal.',
+        );
+      }
+      return;
+    }
     try {
       // Launch Services uses the user's .command file association. Terminal.app is the fallback.
       await execute('/usr/bin/open', [path], { timeout: 10000 });

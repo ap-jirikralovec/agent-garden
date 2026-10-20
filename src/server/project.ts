@@ -1,6 +1,6 @@
 import { mkdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import type { ProjectCheck } from '../shared/types.js';
 import { hostPlatform, isWindowsDriveMount } from './platform.js';
 
@@ -21,7 +21,26 @@ export async function checkProject(value: string): Promise<ProjectCheck> {
     if (error.code === 'ENOTDIR') throw new Error('A part of the project path is not a folder.');
     throw new Error('Project folder cannot be accessed. Check the path and permissions.');
   });
-  if (!info) return { path, exists: false };
+  if (!info) {
+    // Windows reports ENOENT, rather than ENOTDIR, for a child of a file.
+    for (let parent = dirname(path); ; parent = dirname(parent)) {
+      let ancestor;
+      try {
+        ancestor = await stat(parent);
+      } catch (error) {
+        if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? ''))
+          throw new Error('Project folder cannot be accessed. Check the path and permissions.', {
+            cause: error,
+          });
+      }
+      if (ancestor) {
+        if (!ancestor.isDirectory()) throw new Error('A part of the project path is not a folder.');
+        break;
+      }
+      if (parent === dirname(parent)) break;
+    }
+    return { path, exists: false };
+  }
   if (!info.isDirectory()) throw new Error('Project path exists but is not a folder.');
   const canonical = await realpath(path);
   if (hostPlatform() === 'wsl' && isWindowsDriveMount(canonical))

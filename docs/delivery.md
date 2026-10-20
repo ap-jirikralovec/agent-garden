@@ -523,3 +523,19 @@ back to Terminal.app only if opening via the association fails. A read-only host
 check of the `.command` association returned Terminal.app. iTerm2's documented
 “Make iTerm2 Default Term” action changes that association; Garden does not
 override the user's system setting.
+
+## Native Windows support — 2026-10-20
+
+The native Windows path runs Node and the standalone Codex CLI in Windows, with
+Windows project folders. Garden uses a Windows folder dialog, stores metadata in
+`%LOCALAPPDATA%\Agent Garden`, opens the loopback dashboard with the OS URL
+handler, and starts the exact Codex session in a new console. Windows selects
+the user's configured default terminal host for that console. The build no
+longer depends on `rm`, and the Windows CI job checks the build, types, style,
+and platform/project tests. The WSL and macOS launch paths remain separate.
+
+The native host acceptance check remains open because no Windows machine is
+available here: install the standalone `codex.exe`, choose a local project,
+create a session, open it in the selected terminal, observe it, reopen the exact
+session, and restart Garden to confirm metadata persistence. The Windows CI job
+also needs to run after these changes are published.

@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
+import { win32 } from 'node:path';
 import { promisify } from 'node:util';
 import {
   hostPlatform,
@@ -45,14 +46,19 @@ export function wslFolderPath(selected: string, distro: string): string {
 async function pickWslFolder(env: NodeJS.ProcessEnv): Promise<string | null> {
   const distro = wslDistroName(env);
   const initial = `\\\\wsl.localhost\\${distro}\\${homedir().replace(/^\//, '').replaceAll('/', '\\')}`;
-  const payload = Buffer.from(JSON.stringify({ initial }), 'utf8').toString('base64');
+  const selected = await pickWindowsFolder(initial, 'Choose a project folder in WSL');
+  return selected ? wslFolderPath(selected, distro) : null;
+}
+
+async function pickWindowsFolder(initial: string, description: string): Promise<string | null> {
+  const payload = Buffer.from(JSON.stringify({ initial, description }), 'utf8').toString('base64');
   const source = `
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $inputData = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')) | ConvertFrom-Json
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = 'Choose a project folder in WSL'
+$dialog.Description = $inputData.description
 $dialog.ShowNewFolderButton = $true
 $dialog.SelectedPath = $inputData.initial
 if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
@@ -67,7 +73,14 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
       cause: error,
     });
   }
-  return selected ? wslFolderPath(selected, distro) : null;
+  return selected || null;
+}
+
+export function windowsFolderPath(selected: string): string {
+  // eslint-disable-next-line no-control-regex -- Windows paths cannot contain control characters.
+  if (!win32.isAbsolute(selected) || selected.length > 4096 || /[\x00-\x1f]/.test(selected))
+    throw new Error('The selected Windows folder path is invalid.');
+  return win32.normalize(selected);
 }
 
 export async function pickProjectFolder(
@@ -80,6 +93,10 @@ export async function pickProjectFolder(
   picking = true;
   try {
     if (platform === 'wsl') return await pickWslFolder(env);
+    if (platform === 'windows') {
+      const selected = await pickWindowsFolder(env.USERPROFILE ?? '', 'Choose a project folder');
+      return selected ? windowsFolderPath(selected) : null;
+    }
     try {
       const { stdout } = await execute('/usr/bin/osascript', ['-l', 'JavaScript', '-e', script], {
         timeout: 300000,

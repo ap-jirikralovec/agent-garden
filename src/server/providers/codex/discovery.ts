@@ -1,5 +1,5 @@
 import { realpath } from 'node:fs/promises';
-import { isAbsolute } from 'node:path';
+import { isAbsolute, win32 } from 'node:path';
 import type { DiscoveryResult } from '../provider.js';
 import type { Rpc, Thread } from './protocol.js';
 
@@ -10,7 +10,9 @@ export async function discoverCodexSessions(
 ): Promise<DiscoveryResult> {
   const result: DiscoveryResult = { sessions: [], warning: null };
   if (!projects.length) return result;
-  const saved = new Set(projects);
+  const projectKey = (path: string) =>
+    process.platform === 'win32' ? win32.normalize(path).toLowerCase() : path;
+  const saved = new Map(projects.map((project) => [projectKey(project), project]));
   const excluded = new Set(excludedSessionIds);
   const seen = new Set<string>();
   let cursor: string | null = null;
@@ -44,7 +46,8 @@ export async function discoverCodexSessions(
         )
           continue;
         const project = await realpath(thread.cwd);
-        if (!saved.has(project)) continue;
+        const savedProject = saved.get(projectKey(project));
+        if (!savedProject) continue;
         const date =
           typeof thread.createdAt === 'number' ? new Date(thread.createdAt * 1000) : new Date();
         result.sessions.push({
@@ -56,7 +59,7 @@ export async function discoverCodexSessions(
           )
             .replace(/\p{Cc}/gu, ' ')
             .slice(0, 60),
-          project,
+          project: savedProject,
           model: typeof thread.model === 'string' ? thread.model : '',
           reasoning: typeof thread.reasoningEffort === 'string' ? thread.reasoningEffort : null,
           createdAt: Number.isFinite(date.getTime())

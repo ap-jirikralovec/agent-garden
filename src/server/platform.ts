@@ -4,10 +4,11 @@ import { promisify } from 'node:util';
 
 const execute = promisify(execFile);
 
-export type HostPlatform = 'macos' | 'wsl' | 'unsupported';
+export type HostPlatform = 'macos' | 'wsl' | 'windows' | 'unsupported';
 
 export function hostPlatform(platform = process.platform, env = process.env): HostPlatform {
   if (platform === 'darwin') return 'macos';
+  if (platform === 'win32') return 'windows';
   if (platform !== 'linux') return 'unsupported';
   if (env.WSL_DISTRO_NAME || env.WSL_INTEROP) return 'wsl';
   try {
@@ -49,5 +50,10 @@ export async function openBrowser(url: string, platform = hostPlatform()): Promi
     await execute('/usr/bin/open', [url], { timeout: 10000 });
   } else if (platform === 'wsl') {
     await execute('explorer.exe', [url], { timeout: 10000 });
+  } else if (platform === 'windows') {
+    const encoded = Buffer.from(url, 'utf8').toString('base64');
+    await runWindowsScript(
+      `$url = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'))\nStart-Process -FilePath $url`,
+    );
   }
 }

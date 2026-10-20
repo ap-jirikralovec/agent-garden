@@ -10,7 +10,7 @@ export async function checkProject(value: string): Promise<ProjectCheck> {
   // eslint-disable-next-line no-control-regex -- Control characters are invalid project input.
   if (!isAbsolute(path) || path.length > 4096 || /[\x00-\x1f]/.test(path)) {
     throw new Error(
-      `Enter an absolute project folder, such as ${hostPlatform() === 'wsl' ? '/home/you/projects/app' : '/Users/you/projects/app'}.`,
+      `Enter an absolute project folder, such as ${hostPlatform() === 'wsl' ? '/home/you/projects/app' : hostPlatform() === 'windows' ? 'C:\\Users\\you\\projects\\app' : '/Users/you/projects/app'}.`,
     );
   }
   path = resolve(path);

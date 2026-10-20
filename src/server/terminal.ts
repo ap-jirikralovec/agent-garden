@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -87,6 +87,27 @@ end run`;
     if (this.platform === 'unsupported')
       throw new Error('Opening terminals is unsupported on this system.');
     if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('Invalid Garden agent identifier.');
+    if (this.platform === 'windows') {
+      // A detached console process uses the user's default Windows terminal host.
+      // Argument arrays keep project paths and native session IDs out of a shell.
+      const child = spawn(command.executable, command.args, {
+        cwd: command.cwd,
+        env: { ...process.env, ...command.env },
+        detached: true,
+        windowsHide: false,
+        stdio: 'ignore',
+      });
+      try {
+        await new Promise<void>((resolve, reject) => {
+          child.once('spawn', resolve);
+          child.once('error', reject);
+        });
+        child.unref();
+      } catch {
+        throw new Error('Could not open a terminal. Your session is saved; retry Open terminal.');
+      }
+      return;
+    }
     const directory = join(this.directory, 'launchers');
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const path = join(directory, `${id}.${this.platform === 'wsl' ? 'sh' : 'command'}`);

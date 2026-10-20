@@ -87,7 +87,7 @@ export function claudeCommand(
 export class ClaudeProvider implements AgentProvider {
   readonly id = 'claude';
   readonly name = 'Claude';
-  readonly enabled = false;
+  readonly enabled = true;
   private online = false;
   private sessions: ClaudeSession[] = [];
   constructor(

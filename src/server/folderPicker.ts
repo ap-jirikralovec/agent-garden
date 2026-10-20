@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
-import { win32 } from 'node:path';
+import { posix, win32 } from 'node:path';
 import { promisify } from 'node:util';
 import {
   hostPlatform,
@@ -83,6 +83,42 @@ export function windowsFolderPath(selected: string): string {
   return win32.normalize(selected);
 }
 
+export function linuxFolderPath(selected: string): string {
+  // eslint-disable-next-line no-control-regex -- Project paths cannot contain control characters.
+  if (!posix.isAbsolute(selected) || selected.length > 4096 || /[\x00-\x1f]/.test(selected))
+    throw new Error('The selected Linux folder path is invalid.');
+  return posix.normalize(selected);
+}
+
+async function pickLinuxFolder(env: NodeJS.ProcessEnv): Promise<string | null> {
+  const kde = (env.XDG_CURRENT_DESKTOP ?? '').toLowerCase().split(':').includes('kde');
+  const dialogs = kde ? ['kdialog', 'zenity'] : ['zenity', 'kdialog'];
+  for (const dialog of dialogs) {
+    const args =
+      dialog === 'kdialog'
+        ? ['--title', 'Choose a project folder', '--getexistingdirectory', homedir()]
+        : [
+            '--file-selection',
+            '--directory',
+            '--title=Choose a project folder',
+            `--filename=${homedir()}/`,
+          ];
+    try {
+      const { stdout } = await execute(dialog, args, { timeout: 300000, maxBuffer: 16384 });
+      const selected = stdout.replace(/\r?\n$/, '');
+      return selected ? linuxFolderPath(selected) : null;
+    } catch (error) {
+      const failure = error as { code?: string | number; stderr?: string };
+      if (failure.code === 'ENOENT') continue;
+      if (failure.code === 1 && !failure.stderr) return null;
+      throw new Error('Could not select a project folder. Close the picker and try again.', {
+        cause: error,
+      });
+    }
+  }
+  throw new Error('Install Zenity or KDialog to choose a project folder.');
+}
+
 export async function pickProjectFolder(
   platform: HostPlatform = hostPlatform(),
   env: NodeJS.ProcessEnv = process.env,
@@ -93,6 +129,7 @@ export async function pickProjectFolder(
   picking = true;
   try {
     if (platform === 'wsl') return await pickWslFolder(env);
+    if (platform === 'linux') return await pickLinuxFolder(env);
     if (platform === 'windows') {
       const selected = await pickWindowsFolder(env.USERPROFILE ?? '', 'Choose a project folder');
       return selected ? windowsFolderPath(selected) : null;

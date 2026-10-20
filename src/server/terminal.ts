@@ -110,13 +110,13 @@ end run`;
     }
     const directory = join(this.directory, 'launchers');
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    const path = join(directory, `${id}.${this.platform === 'wsl' ? 'sh' : 'command'}`);
+    const path = join(directory, `${id}.${this.platform === 'macos' ? 'command' : 'sh'}`);
     await writeFile(
       path,
       launchScript(
         command,
         this.platform === 'macos' ? join(directory, `${id}.tty`) : undefined,
-        this.platform === 'wsl' ? '/bin/sh' : '/bin/zsh',
+        this.platform === 'macos' ? '/bin/zsh' : '/bin/sh',
       ),
       { mode: 0o700 },
     );
@@ -141,6 +141,40 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         );
       }
       return;
+    }
+    if (this.platform === 'linux') {
+      const kde = (this.env.XDG_CURRENT_DESKTOP ?? '').toLowerCase().split(':').includes('kde');
+      const desktopTerminals = kde ? ['konsole', 'gnome-terminal'] : ['gnome-terminal', 'konsole'];
+      for (const terminal of ['xdg-terminal-exec', 'x-terminal-emulator', ...desktopTerminals]) {
+        const args =
+          terminal === 'xdg-terminal-exec'
+            ? ['/bin/sh', path]
+            : terminal === 'gnome-terminal'
+              ? ['--', '/bin/sh', path]
+              : ['-e', '/bin/sh', path];
+        try {
+          const child = spawn(terminal, args, {
+            env: { ...process.env, ...this.env },
+            detached: true,
+            stdio: 'ignore',
+          });
+          await new Promise<void>((resolve, reject) => {
+            child.once('spawn', resolve);
+            child.once('error', reject);
+          });
+          child.unref();
+          return;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+          throw new Error(
+            'Could not open a terminal. Your session is saved; retry Open terminal.',
+            {
+              cause: error,
+            },
+          );
+        }
+      }
+      throw new Error('Could not open a terminal. Your session is saved; retry Open terminal.');
     }
     try {
       // Launch Services uses the user's .command file association. Terminal.app is the fallback.

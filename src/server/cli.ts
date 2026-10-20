@@ -19,7 +19,7 @@ const { values } = parseArgs({
 });
 if (values.help) {
   console.log(
-    'Agent Garden\n\nUsage: agent-garden [--port 4317] [--no-open] [--data-dir PATH]\n\nRequires macOS, WSL2, or Windows, Node.js 24.12+, and Codex CLI 0.163.0+ signed in.',
+    'Agent Garden\n\nUsage: agent-garden [--port 4317] [--no-open] [--data-dir PATH]\n\nRequires macOS, Linux, WSL2, or Windows, Node.js 24.12+, and Codex CLI 0.163.0+ signed in.',
   );
   process.exit(0);
 }

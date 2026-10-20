@@ -25,14 +25,15 @@ export async function dataDirectory(
       throw new Error('LOCALAPPDATA is unavailable. Set --data-dir to an absolute folder.');
     return win32.join(env.LOCALAPPDATA, 'Agent Garden');
   }
-  if (platform === 'wsl') {
+  if (platform === 'wsl' || platform === 'linux') {
     const parent =
       env.XDG_DATA_HOME && posix.isAbsolute(env.XDG_DATA_HOME)
         ? env.XDG_DATA_HOME
         : posix.join(home, '.local', 'share');
     return posix.join(parent, 'Agent Garden');
   }
-  if (platform === 'unsupported') throw new Error('Agent Garden requires macOS, WSL2, or Windows.');
+  if (platform === 'unsupported')
+    throw new Error('Agent Garden requires macOS, Linux, WSL2, or Windows.');
   const parent = posix.join(home, 'Library', 'Application Support');
   const current = join(parent, 'Agent Garden');
   const legacy = join(parent, 'Codex Garden');

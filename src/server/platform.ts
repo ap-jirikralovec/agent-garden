@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 
 const execute = promisify(execFile);
 
-export type HostPlatform = 'macos' | 'wsl' | 'windows' | 'unsupported';
+export type HostPlatform = 'macos' | 'linux' | 'wsl' | 'windows' | 'unsupported';
 
 export function hostPlatform(platform = process.platform, env = process.env): HostPlatform {
   if (platform === 'darwin') return 'macos';
@@ -14,9 +14,9 @@ export function hostPlatform(platform = process.platform, env = process.env): Ho
   try {
     if (/microsoft|wsl/i.test(readFileSync('/proc/sys/kernel/osrelease', 'utf8'))) return 'wsl';
   } catch {
-    // A Linux host without WSL is outside the current platform scope.
+    // A native Linux host may not expose osrelease here.
   }
-  return 'unsupported';
+  return 'linux';
 }
 
 export function wslDistroName(env = process.env): string {
@@ -50,6 +50,8 @@ export async function openBrowser(url: string, platform = hostPlatform()): Promi
     await execute('/usr/bin/open', [url], { timeout: 10000 });
   } else if (platform === 'wsl') {
     await execute('explorer.exe', [url], { timeout: 10000 });
+  } else if (platform === 'linux') {
+    await execute('xdg-open', [url], { timeout: 10000 });
   } else if (platform === 'windows') {
     const encoded = Buffer.from(url, 'utf8').toString('base64');
     await runWindowsScript(

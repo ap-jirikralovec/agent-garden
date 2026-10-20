@@ -8,7 +8,12 @@ const native = vi.hoisted(() => ({ run: vi.fn(), spawn: vi.fn() }));
 vi.mock('node:child_process', () => ({ execFile: native.run, spawn: native.spawn }));
 
 import { dataDirectory } from '../src/server/dataDirectory.js';
-import { pickProjectFolder, windowsFolderPath, wslFolderPath } from '../src/server/folderPicker.js';
+import {
+  pickProjectFolder,
+  linuxFolderPath,
+  windowsFolderPath,
+  wslFolderPath,
+} from '../src/server/folderPicker.js';
 import { TerminalLauncher } from '../src/server/terminal.js';
 import { executableCandidates } from '../src/server/providers/factory.js';
 import {
@@ -58,6 +63,13 @@ it('routes WSL browser opening to the Windows host', async () => {
   expect(native.run.mock.calls[0].slice(0, 2)).toEqual(['explorer.exe', ['http://127.0.0.1:4317']]);
 });
 
+it('recognizes native Linux and opens its browser through xdg-open', async () => {
+  expect(hostPlatform('linux', {})).toBe('linux');
+  native.run.mockImplementation((_command, _args, _options, done) => done(null, { stdout: '' }));
+  await openBrowser('http://127.0.0.1:4317', 'linux');
+  expect(native.run.mock.calls[0].slice(0, 2)).toEqual(['xdg-open', ['http://127.0.0.1:4317']]);
+});
+
 it('uses the native Codex executable on Windows', () => {
   expect(executableCandidates('codex', 'win32')).toEqual(['codex.exe']);
   expect(executableCandidates('codex', 'darwin')).toEqual(['codex']);
@@ -98,8 +110,57 @@ it('stores WSL metadata under XDG data home without changing macOS legacy lookup
   expect(await dataDirectory(join(tmpdir(), 'garden'), '/home/ana', 'wsl', {})).toBe(
     join(tmpdir(), 'garden'),
   );
+  expect(await dataDirectory(undefined, '/home/ana', 'linux', {})).toBe(
+    '/home/ana/.local/share/Agent Garden',
+  );
+  expect(
+    await dataDirectory(undefined, '/home/ana', 'linux', {
+      XDG_DATA_HOME: '/home/ana/data',
+    }),
+  ).toBe('/home/ana/data/Agent Garden');
   await expect(dataDirectory(undefined, '/home/ana', 'unsupported', {})).rejects.toThrow(
-    'requires macOS, WSL2, or Windows',
+    'requires macOS, Linux, WSL2, or Windows',
+  );
+});
+
+it('uses GNOME and KDE folder dialogs with safe paths and cancellation', async () => {
+  native.run.mockImplementation((_command, _args, _options, done) =>
+    done(null, { stdout: '/home/ana/my project\n' }),
+  );
+  expect(await pickProjectFolder('linux', { XDG_CURRENT_DESKTOP: 'GNOME' })).toBe(
+    '/home/ana/my project',
+  );
+  expect(native.run.mock.calls[0][0]).toBe('zenity');
+  expect(native.run.mock.calls[0][1]).toContain('--directory');
+  expect(await pickProjectFolder('linux', { XDG_CURRENT_DESKTOP: 'KDE' })).toBe(
+    '/home/ana/my project',
+  );
+  expect(native.run.mock.calls[1][0]).toBe('kdialog');
+  expect(native.run.mock.calls[1][1]).toContain('--getexistingdirectory');
+  expect(() => linuxFolderPath('relative/folder')).toThrow('invalid');
+  expect(() => linuxFolderPath('/home/ana/\nbad')).toThrow('invalid');
+  native.run.mockImplementation((_command, _args, _options, done) =>
+    done(Object.assign(new Error('cancelled'), { code: 1, stderr: '' }), null),
+  );
+  expect(await pickProjectFolder('linux', { XDG_CURRENT_DESKTOP: 'GNOME' })).toBeNull();
+});
+
+it('falls back to the other Linux folder picker only when the preferred one is absent', async () => {
+  native.run.mockImplementation((command, _args, _options, done) =>
+    command === 'kdialog'
+      ? done(Object.assign(new Error('missing'), { code: 'ENOENT' }), null)
+      : done(null, { stdout: '/home/ana/project\n' }),
+  );
+  expect(await pickProjectFolder('linux', { XDG_CURRENT_DESKTOP: 'KDE' })).toBe(
+    '/home/ana/project',
+  );
+  expect(native.run.mock.calls.map((call) => call[0])).toEqual(['kdialog', 'zenity']);
+  native.run.mockClear();
+  native.run.mockImplementation((_command, _args, _options, done) =>
+    done(Object.assign(new Error('missing'), { code: 'ENOENT' }), null),
+  );
+  await expect(pickProjectFolder('linux', { XDG_CURRENT_DESKTOP: 'KDE' })).rejects.toThrow(
+    'Install Zenity or KDialog',
   );
 });
 
@@ -186,4 +247,85 @@ it('opens a private WSL launcher in Windows Terminal with encoded arguments', as
   expect(source).not.toContain('INJECTED');
   expect(source).not.toContain(launcher);
   expect(powershellCommand(source)).toMatch(/^[A-Za-z0-9+/=]+$/);
+});
+
+it('opens a quoted Linux launcher in the configured default terminal', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'garden-linux-launcher-'));
+  folders.push(directory);
+  const child = { once: vi.fn(), unref: vi.fn() };
+  child.once.mockImplementation((event: string, listener: () => void) => {
+    if (event === 'spawn') queueMicrotask(listener);
+    return child;
+  });
+  native.spawn.mockReturnValue(child);
+  const id = randomUUID();
+  await new TerminalLauncher(directory, 'linux', { XDG_CURRENT_DESKTOP: 'GNOME' }).open(id, {
+    executable: '/usr/bin/codex',
+    args: ['resume', "native'$(printf INJECTED)"],
+    cwd: "/home/ana/it's a project",
+  });
+  const launcher = join(directory, 'launchers', `${id}.sh`);
+  expect(await readFile(launcher, 'utf8')).toContain("'native'\\''$(printf INJECTED)'");
+  expect(native.spawn).toHaveBeenCalledWith(
+    'xdg-terminal-exec',
+    ['/bin/sh', launcher],
+    expect.objectContaining({ detached: true, stdio: 'ignore' }),
+  );
+});
+
+it('uses Konsole when the configured Linux terminal launchers are absent', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'garden-linux-konsole-'));
+  folders.push(directory);
+  native.spawn.mockImplementation((terminal) => {
+    const child = { once: vi.fn(), unref: vi.fn() };
+    child.once.mockImplementation((event: string, listener: (error?: Error) => void) => {
+      if (terminal === 'konsole' && event === 'spawn') queueMicrotask(listener);
+      if (terminal !== 'konsole' && event === 'error')
+        queueMicrotask(() => listener(Object.assign(new Error('missing'), { code: 'ENOENT' })));
+      return child;
+    });
+    return child;
+  });
+  const id = randomUUID();
+  await new TerminalLauncher(directory, 'linux', { XDG_CURRENT_DESKTOP: 'KDE' }).open(id, {
+    executable: '/usr/bin/codex',
+    args: ['resume', randomUUID()],
+  });
+  expect(native.spawn.mock.calls.map((call) => call[0])).toEqual([
+    'xdg-terminal-exec',
+    'x-terminal-emulator',
+    'konsole',
+  ]);
+  expect(native.spawn.mock.calls[2][1]).toEqual([
+    '-e',
+    '/bin/sh',
+    join(directory, 'launchers', `${id}.sh`),
+  ]);
+});
+
+it('falls back from missing default launchers to Konsole and keeps the session saved on failure', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'garden-linux-fallback-'));
+  folders.push(directory);
+  native.spawn.mockImplementation(() => {
+    const child = { once: vi.fn(), unref: vi.fn() };
+    child.once.mockImplementation((event: string, listener: (error?: Error) => void) => {
+      if (event === 'error')
+        queueMicrotask(() => listener(Object.assign(new Error('missing'), { code: 'ENOENT' })));
+      return child;
+    });
+    return child;
+  });
+  const command = { executable: '/usr/bin/codex', args: ['resume', randomUUID()] };
+  await expect(
+    new TerminalLauncher(directory, 'linux', { XDG_CURRENT_DESKTOP: 'KDE' }).open(
+      randomUUID(),
+      command,
+    ),
+  ).rejects.toThrow('session is saved');
+  expect(native.spawn.mock.calls.map((call) => call[0])).toEqual([
+    'xdg-terminal-exec',
+    'x-terminal-emulator',
+    'konsole',
+    'gnome-terminal',
+  ]);
 });

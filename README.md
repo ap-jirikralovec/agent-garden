@@ -5,7 +5,7 @@ agents. It shows their status, project, and current task, and opens their termin
 when you need to respond. Conversations and approvals stay with Codex.
 
 The server, dashboard, and saved data run only on your machine. Agent Garden
-supports macOS, Windows through WSL2, and native Windows.
+supports macOS, Linux, Windows through WSL2, and native Windows.
 
 ## Run locally
 

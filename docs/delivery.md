@@ -539,3 +539,18 @@ available here: install the standalone `codex.exe`, choose a local project,
 create a session, open it in the selected terminal, observe it, reopen the exact
 session, and restart Garden to confirm metadata persistence. The Windows CI job
 also needs to run after these changes are published.
+
+## Native Linux desktop support — 2026-10-20
+
+GNOME and KDE desktop Linux use the same provider and session code as other hosts.
+Metadata lives under the XDG data directory. `xdg-open` opens the dashboard;
+Zenity or KDialog selects a project folder. Garden tries the configured terminal
+launcher first, then common GNOME/KDE terminal commands, passing a private quoted
+shell script as arguments. WSL keeps its Windows-host paths and launch behavior.
+
+Linux CI is configured to check tests, types, style and build. Local macOS checks
+passed for the platform routing, picker cancellation and fallback, quoted terminal
+handoff, the full test suite, type checks, lint, formatting, build, and the
+no-inference Codex and Claude smoke checks. A GNOME and KDE host check still needs
+to select a folder, create and reopen a session in the terminal, observe status
+changes and confirm the card survives a Garden restart.

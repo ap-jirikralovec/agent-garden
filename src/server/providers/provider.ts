@@ -10,6 +10,7 @@ export type AgentObservation = Pick<
   | 'connection'
   | 'detail'
   | 'lastSeen'
+  | 'lastActiveAt'
   | 'workers'
   | 'workersError'
 >;

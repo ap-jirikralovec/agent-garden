@@ -34,6 +34,7 @@ export interface Agent {
   detail: string | null;
   lastSeen: string | null;
   createdAt: string;
+  lastActiveAt?: string;
   workers?: AgentWorker[];
   workersError?: string | null;
 }

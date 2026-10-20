@@ -288,6 +288,8 @@ function validAgent(value: unknown, legacy: boolean): value is Agent {
       a.workersError === null ||
       typeof a.workersError === 'string') &&
     (a.lastSeen === null || typeof a.lastSeen === 'string') &&
+    (a.lastActiveAt === undefined ||
+      (typeof a.lastActiveAt === 'string' && Number.isFinite(Date.parse(a.lastActiveAt)))) &&
     (a.detail === null || typeof a.detail === 'string')
   );
 }

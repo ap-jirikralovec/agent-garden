@@ -6,7 +6,9 @@ garden is **dashboard**. Additional gardens and a header selector are deferred.
 - `App.vue` owns the application subscription and explicit refresh requests. It
   renders the shared header, `DashboardGarden` and one shared creation dialog.
   Header and garden emit creation requests; App forwards optional project selection
-  to that dialog. It contains no card, filtering or form logic.
+  to that dialog. It contains no card, filtering or form logic. App also selects
+  the favicon from the shared snapshot: live input requests take priority over
+  running work, including subagents; a disconnected browser uses the plain icon.
 - `gardenSync.ts` manages the subscription lifetime. SSE supplies snapshots, with
   an initial HTTP fetch and a five-second polling fallback while SSE is down.
   EventSource reconnects automatically; the next valid stream snapshot stops
@@ -17,6 +19,10 @@ garden is **dashboard**. Additional gardens and a header selector are deferred.
   and shared derived state, including provider availability and overview counts.
   Disconnecting retains the snapshot and saved identities. Components use
   `storeToRefs` for reactive state and store actions for shared updates.
+- The server snapshot orders agents by saved conversation activity and projects
+  by their most recently active agent. New sessions use creation time until the
+  provider reports activity; empty projects follow active ones in saved order.
+  This order is shared by the dashboard, project manager and creation picker.
 - `api.ts` is the typed HTTP boundary for snapshots and explicit user actions. It
   retains the server's same-origin request header. Provider and native terminal
   routing remain on the backend.

@@ -1,12 +1,23 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useGardenStore } from './stores/garden';
 import { subscribeToGarden } from './gardenSync';
+import { faviconState, type FaviconState } from './favicon';
 import CreateAgentDialog from './components/CreateAgentDialog.vue';
 import ApplicationHeader from './components/ApplicationHeader.vue';
 import DashboardGarden from './gardens/dashboard/DashboardGarden.vue';
 const creation = ref<InstanceType<typeof CreateAgentDialog>>();
 const garden = useGardenStore();
+const faviconPaths: Record<FaviconState, string> = {
+  default: '/favicon.svg',
+  running: '/favicon-running.svg',
+  waiting: '/favicon-waiting.svg',
+};
+watch(
+  () => faviconState(garden.snapshot.agents, garden.browserConnected),
+  (state) => document.querySelector('link[rel="icon"]')?.setAttribute('href', faviconPaths[state]),
+  { immediate: true },
+);
 let subscription: ReturnType<typeof subscribeToGarden> | undefined;
 onMounted(() => {
   subscription = subscribeToGarden({

@@ -97,3 +97,22 @@ it('does not present projects with hidden-provider agents as empty', () => {
     }),
   ).toEqual([]);
 });
+
+it('places empty project groups after agents in recent order', () => {
+  const agents = [
+    { id: 'recent', project: '/recent' },
+    { id: 'older', project: '/older' },
+  ] as Agent[];
+  expect(
+    groupAgents(agents, true, {
+      projects: [
+        { path: '/recent', name: 'Recent' },
+        { path: '/older', name: 'Older' },
+        { path: '/empty', name: 'Empty' },
+      ],
+      allAgents: agents,
+      hideEmpty: false,
+      search: '',
+    }).map((group) => group.project),
+  ).toEqual(['/recent', '/older', '/empty']);
+});

@@ -52,6 +52,7 @@ describe('observing Codex sessions', () => {
       status: 'working' as const,
       task: 'Existing task',
       lastSeen: 'earlier',
+      lastActiveAt: '2026-10-19T12:00:00.000Z',
     };
     const result = observe(previous, {
       ...thread('notLoaded'),
@@ -61,9 +62,24 @@ describe('observing Codex sessions', () => {
     expect(result.connection).toBe('disconnected');
     expect(result.status).toBe('working');
     expect(result.lastSeen).toBe('earlier');
+    expect(result.lastActiveAt).toBe(previous.lastActiveAt);
     expect(result.task).toBe('Existing task');
     expect(result.model).toBe(previous.model);
     expect(result.reasoning).toBe(previous.reasoning);
+  });
+  it('uses provider activity time without moving backward or using poll time', () => {
+    const updated = observe(agent, {
+      ...thread('idle'),
+      updatedAt: Date.parse('2026-10-20T10:00:00.000Z') / 1000,
+    });
+    expect(updated.lastActiveAt).toBe('2026-10-20T10:00:00.000Z');
+    expect(
+      observe({ ...agent, lastActiveAt: updated.lastActiveAt }, thread('idle')).lastActiveAt,
+    ).toBe(updated.lastActiveAt);
+    expect(
+      observe({ ...agent, lastActiveAt: updated.lastActiveAt }, { ...thread('idle'), updatedAt: 1 })
+        .lastActiveAt,
+    ).toBe(updated.lastActiveAt);
   });
   it('extracts the latest user task and tracks terminal-side model changes', () => {
     const result = observe(

@@ -76,6 +76,12 @@ it('uses Claude model-specific effort choices and structured states without gues
   ).toBe('waiting');
   expect(observeClaude(agent, { ...session, state: 'done' }, []).status).toBe('finished');
   expect(observeClaude(agent, { ...session, state: 'failed' }, []).status).toBe('failed');
+  expect(
+    observeClaude(agent, session, [
+      { event: 'SessionStart', at: '2026-10-20T08:00:00.000Z' },
+      { event: 'UserPromptSubmit', at: '2026-10-20T09:00:00.000Z' },
+    ]).lastActiveAt,
+  ).toBe('2026-10-20T09:00:00.000Z');
   const stale = observeClaude(
     { ...agent, status: 'working', task: 'Ask for a color?', lastSeen: '2026-01-01T00:00:00.000Z' },
     undefined,

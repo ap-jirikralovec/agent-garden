@@ -4,7 +4,8 @@ import { storeToRefs } from 'pinia';
 import { statusLabels, type Agent } from '../../../shared/types';
 import { useGardenStore } from '../../stores/garden';
 import { gardenApi } from '../../api';
-import { projectName, hasWaitingWorker, initials, seen } from '../../agentPresentation';
+import { hasWaitingWorker, initials, seen } from '../../agentPresentation';
+import GardenIcon from '../../components/GardenIcon.vue';
 import ProviderLogo from '../../components/ProviderLogo.vue';
 import WorkerList from './WorkerList.vue';
 defineProps<{ agent: Agent; index: number; now: number }>();
@@ -81,7 +82,9 @@ async function remove(agent: Agent) {
       <span class="avatar" :class="`avatar-${index % 4}`">{{ initials(agent.name) }}</span>
       <div class="agent-name">
         <h3>{{ agent.name }}</h3>
-        <span class="project-name" :title="agent.project">⌁ {{ projectName(agent.project) }}</span>
+        <span class="project-name" :title="agent.project"
+          >⌁ {{ store.projectLabel(agent.project) }}</span
+        >
       </div>
       <button
         class="icon-button remove-card"
@@ -93,6 +96,15 @@ async function remove(agent: Agent) {
       </button>
     </div>
     <div class="status-row">
+      <span
+        v-if="agent.origin === 'garden'"
+        class="origin-badge garden-origin"
+        role="img"
+        title="Created in Garden"
+        aria-label="Created in Garden"
+        ><GardenIcon
+      /></span>
+      <span v-else class="origin-badge">External</span>
       <span
         class="provider-identity"
         :title="`${providerName(agent.provider)} session: ${agent.sessionId}`"
@@ -117,7 +129,7 @@ async function remove(agent: Agent) {
     </div>
     <p v-if="agent.detail" class="agent-detail">{{ agent.detail }}</p>
     <div class="model-row">
-      <span :title="agent.model">{{ agent.model }}</span
+      <span :title="agent.model">{{ agent.model || 'Unknown model' }}</span
       ><span v-if="agent.reasoning" class="reasoning">{{ agent.reasoning }}</span>
     </div>
     <WorkerList
@@ -150,6 +162,19 @@ async function remove(agent: Agent) {
 
 <style scoped lang="scss">
 @use '../../styles/tokens' as tokens;
+.origin-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  color: var(--color-muted);
+}
+.garden-origin {
+  color: var(--color-primary);
+}
+.garden-origin svg {
+  width: 22px;
+  height: 22px;
+}
 .agent-card {
   padding: 22px 23px 0;
   background: var(--color-surface);

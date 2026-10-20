@@ -7,6 +7,7 @@ const { total, availableProviders } = storeToRefs(useGardenStore());
 const search = defineModel<string>('search', { required: true });
 const filter = defineModel<string>('filter', { required: true });
 const providerFilters = defineModel<ProviderId[]>('providers', { required: true });
+const hideEmpty = defineModel<boolean>('hideEmpty', { required: true });
 const groupByProject = defineModel<boolean>('grouped', { required: true });
 </script>
 
@@ -48,15 +49,20 @@ const groupByProject = defineModel<boolean>('grouped', { required: true });
         /><span>{{ provider.name }}</span></label
       >
     </fieldset>
-    <label class="group-toggle"
-      ><span>Group by project</span
-      ><span class="connection-switch"
-        ><input
-          v-model="groupByProject"
-          type="checkbox"
-          role="switch"
-          aria-label="Group by project" /><span aria-hidden="true"></span></span
-    ></label>
+    <div class="project-options">
+      <label v-if="groupByProject" class="group-toggle"
+        ><input v-model="hideEmpty" type="checkbox" /> Hide empty projects</label
+      >
+      <label class="group-toggle"
+        ><span>Group by project</span
+        ><span class="connection-switch"
+          ><input
+            v-model="groupByProject"
+            type="checkbox"
+            role="switch"
+            aria-label="Group by project" /><span aria-hidden="true"></span></span
+      ></label>
+    </div>
   </div>
 </template>
 
@@ -183,6 +189,16 @@ const groupByProject = defineModel<boolean>('grouped', { required: true });
 }
 .provider-filter img[alt^='Codex'] {
   transform: scale(1.25);
+}
+.project-options {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  align-items: center;
+  margin-left: auto;
+}
+.group-toggle input {
+  accent-color: var(--color-primary);
 }
 .group-toggle {
   display: flex;

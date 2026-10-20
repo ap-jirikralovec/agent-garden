@@ -357,3 +357,137 @@ resolved before this task, and baseline `8b5f538` exists. This work is on
 
 Deviation from initial plan: added repo-wide ESLint/Prettier, initial formatting
 and workspace save hooks at the user's explicit request.
+
+## Persistent projects and header actions — 2026-10-20
+
+Approved in conversation: add folders through a native picker, retain projects
+without agents, manage projects from a header dialog, move Add agent to the
+header while keeping the ghost card, and offer Hide empty projects. Project
+management includes display-name editing and removal only after all tracked
+agents are removed. Manual path entry is superseded by folder selection; users
+can create a directory through the picker's New Folder action. Execution: Rails.
+
+Projects use canonical folder paths as their keys, with independent display
+names. Metadata version 3 adds projects to the existing atomic `agents.json`;
+versions 1 and 2 derive projects from tracked cards without changing card/native
+IDs or connection preferences. Removing the last card keeps its project. A
+provider observation that changes its working directory retains both projects.
+Project removal checks all tracked cards, including unavailable providers, in
+the same serialized store operation as the deletion. No folder deletion occurs.
+Provider session creation, terminal handoff, and monitoring remain provider-owned.
+
+The server opens an AppKit folder-only panel on explicit Add project, supporting
+New Folder and cancellation. It passes a static JXA program to `osascript` as an
+argument, validates the returned directory and deduplicates canonical paths.
+Only one picker may open at once. Project routes retain local-host, origin and
+request-header checks. Cancellation returns an unchanged snapshot. The browser
+uses saved projects for agent creation, with Add project available there too.
+Grouped dashboard rows include truly empty projects with a compact message and
+an Add agent action preselecting that project. Hide empty defaults off; status
+filters omit empty rows, and populated projects hidden by filters are not
+misrepresented as empty. Search includes saved display names and full paths.
+
+Verification performed:
+
+- All 41 tests pass. New cases cover independent project persistence, legacy
+  migration, display names, concurrent writes, removal guards, preservation of
+  malformed metadata, working-directory changes, hidden-provider counts,
+  empty-project/search/status combinations, native picker cancellation/failure
+  and concurrency, and same-origin protection on project routes.
+- Type checks, lint, formatting, production build and `git diff --check` pass.
+  The real-Codex no-inference lifecycle smoke check passes.
+- An isolated preview with temporary metadata and a fake provider confirmed the
+  header actions, retained ghost card, compact empty row, hide-empty toggle,
+  display-name editing and disabled removal of a populated project in Zen.
+  Native folder selection returned a real folder and saved it in the preview.
+  No actual agent tasks or terminal sessions were created by the preview.
+- The computer-use tool then repeatedly timed out. Mobile layout, end-to-end
+  creation from the saved-project selector, and creating a new directory inside
+  the native picker remain manual visual checks. Native cancellation and
+  creation capability are covered at the process/API boundary, rather than
+  claimed as full native UI verification. SonarQube is unavailable.
+
+Deviation from initial plan: None. The remaining host checks above are
+verification limitations, not a change to scope. Restart the Garden backend and
+reload the browser to load the new project routes and snapshot schema.
+
+## External-agent discovery and global visibility — 2026-10-20
+
+Source: the approved conversation for external agents. Discover only currently
+open sessions in saved projects; retain discovered cards after closure. Distinguish
+Garden-created cards with the logo sprout. The user replaced the initial proposal
+for a discovery switch and origin filter with one persistent global Show external
+agents setting in a header Settings dialog, default false. Hiding external agents
+must not stop discovery or monitoring. Execution: Rails.
+
+Delivered behavior:
+
+- Codex discovers loaded top-level sessions through its read-only provider API,
+  canonicalizes their paths and requires an exact saved-project match. It excludes
+  children, internal subagents, cold historical threads, known cards and removed
+  native identities. Discovery and observation never resume/name/subscribe/send
+  input to a session or modify provider-owned conversations. Claude remains off.
+- Store version 4 adds durable garden/external origin, visibility settings and
+  removed-identity exclusions. Versions 1–3 retain card/native IDs, project display
+  names and connection choices, migrating cards to Garden origin and visibility
+  off. Imported cards survive closing/restart. Observations cannot create saved
+  projects for external sessions; cards that move outside saved folders remain
+  stored and become visible again when their folder is saved.
+- Candidate admission checks provider generation, project membership, creation
+  activity, native-identity uniqueness, exclusions and the existing 50-card limit
+  inside the serialized store operation. In-flight results cannot re-add removed
+  cards/projects or import after a provider is disabled. Discovery inspects at most
+  200 loaded IDs per scan; Settings exposes limits/errors separately from transport
+  health so existing cards continue monitoring when discovery fails.
+- Show external agents applies to server snapshots delivered to every browser,
+  independently of discovery. Hidden cards contribute no dashboard cards, search
+  results, overview/attention totals or group badges. Project management keeps
+  truthful tracked counts/removal guards. There is no origin filter or discovery
+  switch. GardenIcon reuses the exact header sprout on Garden cards with an
+  accessible Created in Garden label; external cards carry text identification.
+- External Open terminal retains the exact native ID and normal launcher flags,
+  without applying Garden's cached model/reasoning on cold resume. An installed
+  Codex check confirmed that empty conversations may persist title/identity but
+  expose null stored presets after restart; native resume then uses Codex defaults.
+  This is documented rather than overridden with possibly stale cached settings.
+
+Observed evidence:
+
+- All 53 tests pass. Discovery cases cover saved-project boundaries, every
+  subagent source/parent exclusion, stored provenance, duplicate/removal behavior,
+  hidden monitoring/counts, provider-disable and project-removal races, overlapping
+  Garden creation, read-only calls, paging/caps, errors without disconnects,
+  external working-directory moves, closure retention and cold-resume arguments.
+  Migration tests cover versions 1–3 without origin fields, preserving identities,
+  saved display names and disabled connection choices. API tests check strict
+  boolean settings, reject unsupported discovery controls, retain same-origin
+  protection and reload persisted settings.
+- Type checks, lint, formatting, build and git diff checks pass. The real installed
+  Codex smoke creates an isolated native session outside Garden's creation path,
+  discovers it, checks default hiding/global visibility, compares loaded IDs and
+  settings before/after discovery, restarts and explicitly reopens that external
+  session without cached overrides. Both threads still have zero turns. The
+  dormant-Claude no-inference configuration/exact-ID probe also passes.
+- A separate read-only check reached the user's existing shared Codex server,
+  found two loaded sessions and no new eligible external sessions in the one
+  saved project. It did not import cards, write metadata or submit work.
+- In an isolated Zen preview with temporary metadata and a fake provider, the
+  default view showed only the Garden card and its accessible sprout badge.
+  Settings exposed Show external agents as off. Enabling it added the External
+  card and updated total/attention counts; hiding it removed both the card and
+  its task from search results. Enabling it from a second tab updated the first
+  tab's existing search result and counts through SSE. The header and cards were
+  visually checked at a 375px viewport, with the Settings controls usable there.
+  Preview tabs/server were closed afterward; no real agent terminal was launched.
+
+Remaining boundaries: only sessions visible to the connected Codex server are
+eligible. Loaded state may outlive a terminal window and is not inferred from
+recent timestamps. Independent servers, historical imports, Claude discovery and
+resetting removal exclusions are outside this delivery. Actual native-terminal
+handoff to a running external conversation was not exercised; command routing,
+resume parameters and the real isolated cold-session lifecycle were verified.
+SonarQube is unavailable. No model inference was submitted by verification.
+
+Deviation from initial plan: None. The empty-session preset behavior is an observed
+provider limitation; native provider behavior is preserved. Restart Garden and
+reload browser windows for the new routes and snapshot schema.

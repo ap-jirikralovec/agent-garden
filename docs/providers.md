@@ -9,6 +9,9 @@ adapter implements `AgentProvider` in `src/server/providers/provider.ts`:
   its native identifier, plus an optional warning such as a failed title update.
 - `readSession`: return normalized status, task, settings and connection details.
   It must stay read-only and must not load a conversation or submit work.
+- `discoverSessions` (optional): list normalized top-level candidates in saved
+  projects, excluding tracked and removed native IDs; return any limit/read
+  warning separately. Only Codex currently implements discovery.
 - `openTerminal`: prepare the exact saved session, then build that provider's
   command. It may restore an unloaded preset on explicit user action.
 
@@ -31,9 +34,11 @@ An agent's `id` identifies its Garden card and launcher file. Its `provider` and
 `sessionId` identify the conversation. Always pass the native `sessionId` to a
 provider's protocol/CLI; never pass the Garden ID. This allows equal native IDs
 across different providers. Legacy Codex cards retain their old Garden ID and use
-the same value as `sessionId`. Version 2 metadata stores both identities and
-connection preferences. This boundary also supports later session discovery;
-discovery and Garden-created/discovered filters are separate follow-up work.
+the same value as `sessionId`. Version 4 metadata stores both identities, persistent `garden | external` origin,
+project names, connection preferences, the global visibility setting and ignored
+native identities. Versions 1–3 migrate with Garden origin and external visibility
+off, preserving card/native IDs and existing project/connection data. Origin is
+not inferred from Codex's CLI/VSCode/app-server source field.
 
 Each provider has independent connection status, model configuration and retry
 timing. Disabling closes Garden's connection, blocks creation/terminal access,
@@ -105,3 +110,45 @@ worker lifecycle/reactivation and stale persistence, and no-inference smoke chec
 handoff is a separate host check. Sources: [Claude agent view](https://code.claude.com/docs/en/agent-view),
 [hooks](https://code.claude.com/docs/en/hooks), and
 [Agent SDK](https://platform.claude.com/docs/en/agent-sdk/typescript).
+
+## External Codex discovery
+
+Each connected provider refresh discovers before observing its tracked cards.
+The Codex adapter pages `thread/loaded/list`, reads candidate metadata with
+`thread/read` and `includeTurns: false`, excludes parent IDs and every subagent
+source, and matches canonical working directories exactly to saved projects.
+There is no timestamp heuristic, historical scan, resume, subscription, title
+update or task submission. Native aliases are canonicalized on later reads too.
+The list is bounded at two 100-ID pages; tracked and ignored IDs are skipped.
+Only sessions visible to the connected app-server are eligible. Loaded state can
+outlast a terminal window; it is not a claim that a particular terminal is open.
+
+Garden admits candidates through the store's serialized mutation queue, checking
+current provider generation, saved-project membership, removal exclusions,
+provider/native-ID uniqueness and the 50-card limit again. Creation in progress
+prevents imports, and completed Garden creations retain their origin/name when
+discovery overlaps them. Unavailable or disabled providers cannot discover.
+Discovery failures do not stop monitoring existing cards. Separate warnings are
+shown in Settings; connection status still reflects transport/observation health.
+
+All imported cards remain tracked after unloading. External observations never
+create saved projects; a card outside the saved project set is retained but not
+shown. Removing either origin atomically records its provider/native identity
+alongside card removal. Later discovery cannot resurrect it, including after a
+restart. No provider-owned conversation is removed or modified.
+
+Show external agents defaults off and changes only the server's snapshots;
+discovery and monitoring continue. All browser windows receive the setting over
+the existing SSE/polling flow. Snapshot project counts still include hidden cards
+for truthful removal guards; dashboard counts/search operate on visible cards.
+External cold-session Open terminal resumes by exact native ID without restoring
+Garden's saved model/reasoning; Garden-created sessions retain their preset rules.
+Codex 0.163.0 can persist an empty conversation's identity/title without its
+model/reasoning preset. Native external resume then selects Codex's current
+defaults. Garden deliberately does not replace those with cached observations.
+
+Protocol verification: generated experimental TypeScript bindings from installed
+Codex 0.163.0 and the pinned
+[`thread_processor.rs`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/app-server/src/request_processors/thread_processor.rs)
+loaded-list and read-view handlers. See also the
+[official app-server documentation](https://learn.chatgpt.com/docs/app-server#list-loaded-threads).

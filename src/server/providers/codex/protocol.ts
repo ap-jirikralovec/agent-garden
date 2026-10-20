@@ -25,7 +25,11 @@ export interface Thread {
   name?: string | null;
   agentNickname?: string | null;
   agentRole?: string | null;
-  source?: string | { subAgent?: { thread_spawn?: { parent_thread_id: string } } };
+  source?:
+    | string
+    | { custom?: string; subAgent?: string | { thread_spawn?: { parent_thread_id: string } } };
+  parentThreadId?: string | null;
+  createdAt?: number;
   updatedAt?: number;
 }
 

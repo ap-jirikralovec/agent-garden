@@ -68,6 +68,44 @@ try {
   assert.equal(garden.snapshot().agents[0].status, 'idle');
   assert.equal(garden.snapshot().agents[0].workersError, null);
   assert.deepEqual(garden.snapshot().agents[0].workers, []);
+  // Create directly through Codex, bypassing Garden's creation path.
+  const external = await rpc.request<{ thread: Thread }>('thread/start', {
+    cwd: directory,
+    model: model.id,
+    ...(effort === null ? {} : { config: { model_reasoning_effort: effort } }),
+  });
+  await rpc.request('thread/name/set', {
+    threadId: external.thread.id,
+    name: 'External smoke check',
+  });
+  const externalPreset = await rpc.request<{ thread: Thread }>('thread/read', {
+    threadId: external.thread.id,
+  });
+  const loadedBefore = await rpc.request<{ data: string[] }>('thread/loaded/list', { limit: 100 });
+  await garden.refresh();
+  assert.equal(
+    store.list().find((item) => item.sessionId === external.thread.id)?.origin,
+    'external',
+  );
+  assert.equal(garden.snapshot().agents.length, 1, 'External agents are hidden by default');
+  await garden.setShowExternalAgents(true);
+  assert.equal(garden.snapshot().agents.length, 2);
+  await garden.setShowExternalAgents(false);
+  assert.equal(garden.snapshot().agents.length, 1);
+  const externalAfterDiscovery = await rpc.request<{ thread: Thread }>('thread/read', {
+    threadId: external.thread.id,
+  });
+  assert.equal(externalAfterDiscovery.thread.model, externalPreset.thread.model);
+  assert.equal(
+    externalAfterDiscovery.thread.reasoningEffort,
+    externalPreset.thread.reasoningEffort,
+  );
+  const loadedAfter = await rpc.request<{ data: string[] }>('thread/loaded/list', { limit: 100 });
+  assert.deepEqual(
+    loadedAfter.data.sort(),
+    loadedBefore.data.sort(),
+    'Discovery must not load or unload sessions',
+  );
   const read = await rpc.request<{ thread: Thread & { name: string } }>('thread/read', {
     threadId: agent.sessionId,
   });
@@ -98,8 +136,35 @@ try {
     itemsView: 'full',
   });
   assert.equal(turns.data.length, 0, 'Opening and monitoring must not submit a task');
+  const externalCold = await rpc.request<{ thread: Thread }>('thread/read', {
+    threadId: external.thread.id,
+  });
+  const externalCard = store.list().find((item) => item.sessionId === external.thread.id)!;
+  await store.update(externalCard.id, { model: 'stale-garden-model', reasoning: 'low' });
+  await garden.open(externalCard.id).catch((error) => {
+    throw new Error('External cold reopening failed', { cause: error });
+  });
+  const externalReopened = await rpc.request<{ thread: Thread }>('thread/read', {
+    threadId: external.thread.id,
+  });
+  // Empty Codex threads may retain their title/identity without persisted
+  // settings. In that case native resume chooses Codex defaults, never Garden's cache.
+  if (externalCold.thread.model !== null && externalCold.thread.model !== undefined)
+    assert.equal(externalReopened.thread.model, externalCold.thread.model);
+  else assert.notEqual(externalReopened.thread.model, 'stale-garden-model');
+  if (
+    externalCold.thread.reasoningEffort !== null &&
+    externalCold.thread.reasoningEffort !== undefined
+  )
+    assert.equal(externalReopened.thread.reasoningEffort, externalCold.thread.reasoningEffort);
+  const externalTurns = await rpc.request<{ data: unknown[] }>('thread/turns/list', {
+    threadId: external.thread.id,
+    limit: 1,
+    itemsView: 'full',
+  });
+  assert.equal(externalTurns.data.length, 0, 'External reopening must not submit a task');
   console.log(
-    'Codex smoke check passed: model catalog, preset, named session, exact-ID reopening, idle monitoring, saved history and resumption. No inference requested.',
+    'Codex smoke check passed: model catalog, preset, named session, exact-ID reopening, idle monitoring, saved history, resumption, read-only external discovery, global visibility and external cold reopening. No inference requested.',
   );
 } finally {
   await garden.stop();

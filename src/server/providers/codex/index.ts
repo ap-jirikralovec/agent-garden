@@ -1,8 +1,10 @@
+import { realpath } from 'node:fs/promises';
 import type { Agent, ProviderConfiguration } from '../../../shared/types.js';
 import type { TerminalCommand } from '../../terminal.js';
 import type { AgentProvider, SessionPreset } from '../provider.js';
 import type { Rpc, Thread, Turn } from './protocol.js';
 import { observe } from './status.js';
+import { discoverCodexSessions } from './discovery.js';
 import { readCodexWorkers } from './workers.js';
 
 export function codexCommand(
@@ -93,6 +95,10 @@ export class CodexProvider implements AgentProvider {
     return { sessionId: thread.id, warning };
   }
 
+  discoverSessions(projects: string[], excludedSessionIds: string[]) {
+    return discoverCodexSessions(this.rpc, projects, excludedSessionIds);
+  }
+
   async readSession(agent: Agent) {
     if (agent.provider !== this.id) throw new Error('This session does not belong to Codex.');
     const { thread } = await this.rpc.request<{ thread: Thread }>('thread/read', {
@@ -105,6 +111,8 @@ export class CodexProvider implements AgentProvider {
       itemsView: 'full',
     });
     const observation = observe(agent, thread, data[0]);
+    if (agent.origin === 'external')
+      observation.project = await realpath(observation.project).catch(() => observation.project);
     try {
       return { ...observation, ...(await readCodexWorkers(this.rpc, agent)) };
     } catch {
@@ -130,10 +138,14 @@ export class CodexProvider implements AgentProvider {
       await this.rpc.request('thread/resume', {
         threadId: agent.sessionId,
         excludeTurns: true,
-        model: agent.model,
-        ...(agent.reasoning === null
+        ...(agent.origin === 'external'
           ? {}
-          : { config: { model_reasoning_effort: agent.reasoning } }),
+          : {
+              model: agent.model,
+              ...(agent.reasoning === null
+                ? {}
+                : { config: { model_reasoning_effort: agent.reasoning } }),
+            }),
       });
     }
     await this.terminal.open(agent.id, command);

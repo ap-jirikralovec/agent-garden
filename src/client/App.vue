@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { useGardenStore } from './stores/garden';
 import { subscribeToGarden } from './gardenSync';
+import CreateAgentDialog from './components/CreateAgentDialog.vue';
 import ApplicationHeader from './components/ApplicationHeader.vue';
 import DashboardGarden from './gardens/dashboard/DashboardGarden.vue';
+const creation = ref<InstanceType<typeof CreateAgentDialog>>();
 const garden = useGardenStore();
 let subscription: ReturnType<typeof subscribeToGarden> | undefined;
 onMounted(() => {
@@ -20,7 +22,11 @@ function refresh() {
 </script>
 
 <template>
-  <div class="shell"><ApplicationHeader /><DashboardGarden @refresh="refresh" /></div>
+  <div class="shell">
+    <ApplicationHeader @add-agent="creation?.open()" />
+    <DashboardGarden @refresh="refresh" @add-agent="creation?.open($event)" />
+    <CreateAgentDialog ref="creation" @created="refresh" />
+  </div>
 </template>
 
 <style scoped lang="scss">

@@ -4,8 +4,9 @@ Agent Garden uses Vue Composition API, TypeScript, Pinia and SCSS. The current
 garden is **dashboard**. Additional gardens and a header selector are deferred.
 
 - `App.vue` owns the application subscription and explicit refresh requests. It
-  renders the shared header and `DashboardGarden`; it contains no card, filtering
-  or form logic.
+  renders the shared header, `DashboardGarden` and one shared creation dialog.
+  Header and garden emit creation requests; App forwards optional project selection
+  to that dialog. It contains no card, filtering or form logic.
 - `gardenSync.ts` manages the subscription lifetime. SSE supplies snapshots, with
   an initial HTTP fetch and a five-second polling fallback while SSE is down.
   EventSource reconnects automatically; the next valid stream snapshot stops
@@ -19,12 +20,18 @@ garden is **dashboard**. Additional gardens and a header selector are deferred.
 - `api.ts` is the typed HTTP boundary for snapshots and explicit user actions. It
   retains the server's same-origin request header. Provider and native terminal
   routing remain on the backend.
-- `components/` holds the app header, connection settings, creation dialog and
-  provider logo. Dialog fields, path-check versions, consent, errors and pending
+- `components/` holds the app header, connection settings, global settings, project management, creation dialog and
+  provider logo. Dialog fields, errors and pending
   states stay local. Successful creation/removal requests a refresh from App;
-  connection settings apply the returned snapshot to Pinia.
+  connection/global settings and project management apply the returned snapshot to Pinia.
+  Global external visibility is persisted on the backend and applied before
+  snapshots reach the client; it is not another garden-local filter. GardenIcon
+  shares the header sprout with the accessible Created in Garden card badge.
+  Folder picking runs only on explicit Add project; cancellation retains the form
+  and saved projects. The backend opens the native macOS picker and validates the
+  selected path. No browser directory-upload or manual path input is used.
 - `gardens/dashboard/` owns dashboard layout, overview, filters, cards, subagent
-  dialogs and view helpers. Search, status/provider filters and project grouping
+  dialogs and view helpers. Search, status/provider filters, empty-project visibility and project grouping
   are local view state. A garden consumes shared state without starting another
   monitor or copying the snapshot into local refs.
 

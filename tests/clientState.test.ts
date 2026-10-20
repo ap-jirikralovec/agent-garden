@@ -5,6 +5,8 @@ import type { Snapshot } from '../src/shared/types';
 
 function snapshot(): Snapshot {
   return {
+    settings: { showExternalAgents: false },
+    projects: [],
     agents: [],
     error: null,
     projectSuggestion: '/work/app',

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 import { storeToRefs } from 'pinia';
-import type { ProjectCheck, ProviderId } from '../../shared/types';
+import type { ProviderId } from '../../shared/types';
 import { useGardenStore } from '../stores/garden';
 import { gardenApi } from '../api';
 const emit = defineEmits<{ created: [] }>();
@@ -17,11 +17,8 @@ const form = ref({
   project: '',
   model: '',
   reasoning: null as string | null,
-  createProject: false,
 });
-const projectStatus = ref<'unchecked' | 'checking' | 'exists' | 'missing' | 'error'>('unchecked');
-const projectError = ref('');
-let projectCheckVersion = 0;
+const picking = ref(false);
 const selectedProvider = computed(() =>
   state.value.providers.find((provider) => provider.id === form.value.provider),
 );
@@ -42,53 +39,29 @@ function selectProvider() {
   selectModel();
 }
 
-watch(
-  () => form.value.project,
-  () => {
-    // Consent and in-flight checks belong to the exact path the user entered.
-    projectCheckVersion++;
-    projectStatus.value = 'unchecked';
-    projectError.value = '';
-    form.value.createProject = false;
-    formError.value = '';
-  },
-  { flush: 'sync' },
-);
-
-async function checkProject(): Promise<ProjectCheck | null> {
-  const project = form.value.project;
-  const version = ++projectCheckVersion;
-  if (!project.trim()) {
-    projectStatus.value = 'unchecked';
-    return null;
-  }
-  projectStatus.value = 'checking';
-  projectError.value = '';
+async function addProject() {
+  if (picking.value || creating.value) return;
+  picking.value = true;
+  formError.value = '';
   try {
-    const result = await gardenApi.checkProject(project);
-    if (version !== projectCheckVersion) return null;
-    projectStatus.value = result.exists ? 'exists' : 'missing';
-    return result;
+    const result = await gardenApi.pickProject();
+    store.receiveSnapshot(result.snapshot);
+    if (result.project) form.value.project = result.project.path;
   } catch (error) {
-    if (version !== projectCheckVersion) return null;
-    projectStatus.value = 'error';
-    projectError.value = (error as Error).message;
-    return null;
+    formError.value = (error as Error).message;
+  } finally {
+    picking.value = false;
   }
 }
 
-async function open() {
+async function open(project?: string) {
   formError.value = '';
-  projectCheckVersion++;
-  projectStatus.value = 'unchecked';
-  projectError.value = '';
   form.value = {
     provider: readyProviders.value[0]?.id ?? '',
     name: '',
-    project: state.value.projectSuggestion,
+    project: project ?? state.value.projects[0]?.path ?? '',
     model: '',
     reasoning: null,
-    createProject: false,
   };
   selectProvider();
   dialog.value?.showModal();
@@ -98,14 +71,12 @@ async function open() {
 
 async function createAgent() {
   const provider = selectedProvider.value;
-  if (creating.value || !selectedReady.value || !provider) return;
+  if (creating.value || picking.value || !selectedReady.value || !provider) return;
   creating.value = true;
   formError.value = '';
   try {
-    const project = await checkProject();
-    if (!project) return;
-    if (!project.exists && !form.value.createProject) {
-      formError.value = 'Confirm creation of the new folder before continuing.';
+    if (!state.value.projects.some((project) => project.path === form.value.project)) {
+      formError.value = 'Choose a saved project first.';
       return;
     }
     const result = await gardenApi.createAgent({
@@ -128,7 +99,11 @@ defineExpose({ open });
 </script>
 
 <template>
-  <dialog ref="dialog" aria-labelledby="dialog-title" @cancel="creating && $event.preventDefault()">
+  <dialog
+    ref="dialog"
+    aria-labelledby="dialog-title"
+    @cancel="(creating || picking) && $event.preventDefault()"
+  >
     <form @submit.prevent="createAgent">
       <div class="dialog-heading">
         <span class="dialog-icon" aria-hidden="true">＋</span
@@ -136,7 +111,7 @@ defineExpose({ open });
           class="icon-button"
           type="button"
           aria-label="Close dialog"
-          :disabled="creating"
+          :disabled="creating || picking"
           @click="dialog?.close()"
         >
           ×
@@ -148,7 +123,7 @@ defineExpose({ open });
         >Agent type<select
           id="agent-provider"
           v-model="form.provider"
-          :disabled="creating"
+          :disabled="creating || picking"
           @change="selectProvider"
         >
           <option v-for="provider in readyProviders" :key="provider.id" :value="provider.id">
@@ -164,46 +139,33 @@ defineExpose({ open });
           required
           maxlength="60"
           placeholder="e.g. Miso"
-          :disabled="creating"
+          :disabled="creating || picking"
           autocomplete="off"
       /></label>
       <label class="form-label" for="agent-project"
-        >Project folder<input
-          id="agent-project"
-          v-model="form.project"
-          required
-          maxlength="4096"
-          placeholder="/Users/you/projects/my-app"
-          :disabled="creating"
-          spellcheck="false"
-          aria-describedby="project-hint project-feedback"
-          :aria-invalid="projectStatus === 'error' ? true : undefined"
-          @blur="!creating && checkProject()"
-        /><small id="project-hint">Use an absolute path or ~/projects/my-app.</small></label
+        >Project
+        <select id="agent-project" v-model="form.project" required :disabled="creating || picking">
+          <option disabled value="">Choose a project</option>
+          <option v-for="project in state.projects" :key="project.path" :value="project.path">
+            {{ project.name }} — {{ project.path }}
+          </option>
+        </select>
+      </label>
+      <button
+        class="secondary add-project"
+        type="button"
+        :disabled="creating || picking || !browserConnected"
+        @click="addProject"
       >
-      <div id="project-feedback" class="project-feedback" aria-live="polite">
-        <p v-if="projectStatus === 'checking'">Checking folder…</p>
-        <p v-else-if="projectStatus === 'exists'">Folder exists.</p>
-        <p v-else-if="projectStatus === 'error'" class="project-error">{{ projectError }}</p>
-        <template v-else-if="projectStatus === 'missing'">
-          <p>This folder does not exist yet.</p>
-          <label class="folder-confirm"
-            ><input v-model="form.createProject" type="checkbox" :disabled="creating" />Confirm
-            creation of new folder</label
-          >
-          <small
-            >Missing parent folders will also be created when you choose Create &amp; open
-            terminal.</small
-          >
-        </template>
-      </div>
+        {{ picking ? 'Choose a folder on your Mac…' : '＋ Add project' }}
+      </button>
       <div class="form-columns">
         <label class="form-label" for="agent-model"
           >Model<select
             id="agent-model"
             v-model="form.model"
             required
-            :disabled="creating"
+            :disabled="creating || picking"
             @change="selectModel"
           >
             <option
@@ -220,7 +182,7 @@ defineExpose({ open });
             id="agent-reasoning"
             v-model="form.reasoning"
             required
-            :disabled="creating"
+            :disabled="creating || picking"
           >
             <option
               v-for="effort in selectedModel?.reasoningLevels"
@@ -238,14 +200,17 @@ defineExpose({ open });
       </p>
       <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
       <div class="dialog-footer">
-        <button class="secondary" type="button" :disabled="creating" @click="dialog?.close()">
+        <button
+          class="secondary"
+          type="button"
+          :disabled="creating || picking"
+          @click="dialog?.close()"
+        >
           Cancel</button
         ><button
           class="primary"
           type="submit"
-          :disabled="
-            creating || !selectedReady || (projectStatus === 'missing' && !form.createProject)
-          "
+          :disabled="creating || picking || !selectedReady || !form.project"
         >
           {{ creating ? 'Creating session…' : 'Create & open terminal' }}
           <span v-if="!creating" aria-hidden="true">↗</span>
@@ -256,37 +221,7 @@ defineExpose({ open });
 </template>
 
 <style scoped lang="scss">
-@use '../styles/tokens' as tokens;
-
-.project-feedback:not(:empty) {
-  margin: -9px 0 19px;
-  color: #63725f;
-  font-size: 11px;
-  line-height: 1.6;
-}
-.project-feedback .project-error {
-  color: var(--color-danger);
-}
-.folder-confirm {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin-top: 10px;
-  font-size: 12px;
-  font-weight: 550;
-  cursor: pointer;
-}
-.folder-confirm input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  flex-shrink: 0;
-  accent-color: var(--color-primary);
-}
-.project-feedback small {
-  display: block;
-  color: var(--color-muted);
-  font-size: 10px;
-  margin-top: 6px;
+.add-project {
+  margin: -5px 0 var(--space-5);
 }
 </style>

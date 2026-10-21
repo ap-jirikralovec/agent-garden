@@ -35,7 +35,13 @@ garden is **dashboard**. Additional gardens and a header selector are deferred.
   states stay local. `WorkWizard.vue` owns the Work selection, parameter and editable
   review steps through the local `useWorkDraft.ts` state. The creation dialog loads
   local presets on open and reuses the existing agent API for the final reviewed
-  prompt; no work is submitted by loading or navigating the wizard. Successful creation/removal requests a refresh from App;
+  prompt; no work is submitted by loading or navigating the wizard.
+  `WorkPresetsDialog.vue`, opened from Settings, owns its catalog, structured form,
+  unsaved-change confirmation and recoverable delete confirmation locally. Preset
+  management uses separate file APIs and never submits an agent task or changes Pinia snapshots.
+  The header connection dot has a transparent 44×44 button, descriptive accessible
+  label and tooltip; only fresh connected state pulses, with reduced motion respected.
+  Successful creation/removal requests a refresh from App;
   connection/global settings and project management apply the returned snapshot to Pinia.
   Global external visibility is persisted on the backend and applied before
   snapshots reach the client; it is not another garden-local filter. GardenIcon

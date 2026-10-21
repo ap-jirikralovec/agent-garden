@@ -8,7 +8,7 @@ import { resolve, sep, extname } from 'node:path';
 import { isProviderId, type NewAgent, type Snapshot } from '../shared/types.js';
 import type { Garden } from './garden.js';
 import { checkProject } from './project.js';
-import { loadWorkPresets } from './work.js';
+import { loadWorkPresets, WorkPresetStore, WorkPresetConflict } from './work.js';
 import { pickProjectFolder } from './folderPicker.js';
 
 function json(response: ServerResponse, status: number, body: unknown) {
@@ -87,6 +87,7 @@ export async function createApp(
     const { createServer } = await import('vite');
     vite = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'spa' });
   }
+  const workStore = options.dataDirectory ? new WorkPresetStore(options.dataDirectory) : null;
   const streams = new Set<ServerResponse>();
   const server = createHttpServer((request, response) => {
     void handle(request, response).catch((error) => {
@@ -94,7 +95,9 @@ export async function createApp(
         response.end();
         return;
       }
-      json(response, 400, { error: error instanceof Error ? error.message : 'Request failed.' });
+      json(response, error instanceof WorkPresetConflict ? 409 : 400, {
+        error: error instanceof Error ? error.message : 'Request failed.',
+      });
     });
   });
   server.requestTimeout = 15000;
@@ -124,6 +127,36 @@ export async function createApp(
       });
     }
     const pathname = new URL(request.url ?? '/', `http://${host}`).pathname;
+    if (request.method === 'GET' && pathname === '/api/work/manage') {
+      if (request.headers['x-garden-request'] !== '1')
+        return json(response, 403, { error: 'Open Garden to manage work presets.' });
+      if (!workStore) throw new Error('The local work folder is not configured.');
+      return json(response, 200, await workStore.list());
+    }
+    if (request.method === 'POST' && pathname === '/api/work') {
+      if (!workStore) throw new Error('The local work folder is not configured.');
+      const input = await readObject(request, 256 * 1024);
+      if (Object.keys(input).length !== 1 || !Object.hasOwn(input, 'preset'))
+        throw new Error('Preset details are required.');
+      return json(response, 201, await workStore.create(input.preset));
+    }
+    const workFilePath = pathname.match(/^\/api\/work\/files\/([^/]+)$/);
+    if (workFilePath && ['POST', 'DELETE'].includes(request.method ?? '')) {
+      if (!workStore) throw new Error('The local work folder is not configured.');
+      const id = decodeURIComponent(workFilePath[1]);
+      const input = await readObject(request, 256 * 1024);
+      const keys = request.method === 'POST' ? ['revision', 'preset'] : ['revision'];
+      if (
+        Object.keys(input).length !== keys.length ||
+        Object.keys(input).some((key) => !keys.includes(key)) ||
+        typeof input.revision !== 'string'
+      )
+        throw new Error('Reload the preset before changing it.');
+      if (request.method === 'POST')
+        return json(response, 200, await workStore.update(id, input.revision, input.preset));
+      await workStore.remove(id, input.revision);
+      return json(response, 200, { ok: true });
+    }
     if (request.method === 'GET' && pathname === '/api/work') {
       if (request.headers['x-garden-request'] !== '1')
         return json(response, 403, { error: 'Open Garden to load work presets.' });

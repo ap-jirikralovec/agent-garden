@@ -2,7 +2,9 @@
 import { ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import { gardenApi } from '../api';
+import WorkPresetsDialog from './WorkPresetsDialog.vue';
 import { useGardenStore } from '../stores/garden';
+const workPresets = ref<InstanceType<typeof WorkPresetsDialog>>();
 const store = useGardenStore();
 const { snapshot, browserConnected, notificationsEnabled } = storeToRefs(store);
 const dialog = ref<HTMLDialogElement>();
@@ -120,6 +122,20 @@ defineExpose({ open });
         <span aria-hidden="true"></span>
       </label>
     </div>
+    <div class="visibility-setting">
+      <div>
+        <strong>Work presets</strong>
+        <p>Create, edit and delete reusable local prompts and their parameters.</p>
+      </div>
+      <button
+        class="secondary"
+        type="button"
+        :disabled="busy || !browserConnected"
+        @click="workPresets?.open()"
+      >
+        Manage presets
+      </button>
+    </div>
     <p class="dialog-note">
       Garden automatically discovers open Codex sessions in saved project folders, even when they
       are hidden. Discovered agents stay tracked after closing. Hidden agents still count toward
@@ -138,6 +154,7 @@ defineExpose({ open });
       <button class="primary" :disabled="busy" @click="dialog?.close()">Done</button>
     </div>
   </dialog>
+  <WorkPresetsDialog ref="workPresets" />
 </template>
 
 <style scoped lang="scss">

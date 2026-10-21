@@ -1,8 +1,14 @@
-import { open, opendir } from 'node:fs/promises';
+import { open, opendir, mkdir, writeFile, rename, unlink, link, lstat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join } from 'node:path';
-import { parseDocument } from 'yaml';
-import { workPlaceholders, type WorkPreset } from '../shared/work.js';
+import { createHash, randomUUID } from 'node:crypto';
+import { parseDocument, stringify } from 'yaml';
+import {
+  workPlaceholders,
+  type WorkPreset,
+  type WorkPresetFile,
+  type WorkPresetCatalog,
+} from '../shared/work.js';
 
 const fileLimit = 128 * 1024;
 
@@ -60,56 +66,241 @@ export function parseWorkPreset(source: string, id: string): WorkPreset {
   return { id, name, author, description, parameters, prompt };
 }
 
-export async function loadWorkPresets(
-  dataDirectory: string,
-  log: (message: string) => void = console.error,
-): Promise<WorkPreset[]> {
+function workFilename(id: string) {
+  if (
+    typeof id !== 'string' ||
+    id.length > 255 ||
+    id.includes('/') ||
+    id.includes('\\') ||
+    id.includes(':') ||
+    [...id].some((character) => character.charCodeAt(0) < 32) ||
+    !/\.ya?ml$/i.test(id)
+  )
+    throw new Error('Choose a valid preset filename.');
+  return id;
+}
+
+async function readWorkFile(directory: string, id: string) {
+  if (!(await lstat(join(directory, workFilename(id)))).isFile())
+    throw new Error('Choose a regular preset file.');
+  const file = await open(
+    join(directory, workFilename(id)),
+    constants.O_RDONLY | constants.O_NOFOLLOW,
+  );
+  try {
+    const stat = await file.stat();
+    if (!stat.isFile() || stat.size > fileLimit)
+      throw new Error('Preset exceeds the 128 KiB file limit or is not a regular file.');
+    const buffer = Buffer.alloc(fileLimit + 1);
+    let total = 0;
+    while (total < buffer.length) {
+      const { bytesRead } = await file.read(buffer, total, buffer.length - total, total);
+      if (!bytesRead) break;
+      total += bytesRead;
+    }
+    if (total > fileLimit) throw new Error('Preset exceeds the 128 KiB file limit.');
+    const bytes = buffer.subarray(0, total);
+    return {
+      source: bytes.toString('utf8'),
+      revision: createHash('sha256').update(bytes).digest('hex'),
+    };
+  } finally {
+    await file.close();
+  }
+}
+
+async function workCatalog(dataDirectory: string): Promise<WorkPresetCatalog> {
   const directory = join(dataDirectory, 'work');
   let entries;
   try {
     entries = await opendir(directory);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+      return { directory, files: [], truncated: false };
     throw new Error('Could not read the local work folder. Check its permissions.', {
       cause: error,
     });
   }
-  const works: WorkPreset[] = [];
-  let count = 0;
+  const files: WorkPresetFile[] = [];
+  let truncated = false;
   for await (const entry of entries) {
     if (!entry.isFile() || !/\.ya?ml$/i.test(entry.name)) continue;
-    if (++count > 100) {
-      log('[Work] Only the first 100 YAML files are loaded.');
+    if (files.length >= 100) {
+      truncated = true;
       break;
     }
+    let revision: string | null = null;
     try {
-      const file = await open(
-        join(directory, entry.name),
-        constants.O_RDONLY | constants.O_NOFOLLOW,
-      );
-      try {
-        const stat = await file.stat();
-        if (!stat.isFile() || stat.size > fileLimit)
-          throw new Error('Preset exceeds the 128 KiB file limit.');
-        // Bound reads even if another process grows a preset while it is being read.
-        const buffer = Buffer.alloc(fileLimit + 1);
-        let total = 0;
-        while (total < buffer.length) {
-          const { bytesRead } = await file.read(buffer, total, buffer.length - total, total);
-          if (!bytesRead) break;
-          total += bytesRead;
-        }
-        if (total > fileLimit) throw new Error('Preset exceeds the 128 KiB file limit.');
-        works.push(parseWorkPreset(buffer.subarray(0, total).toString('utf8'), entry.name));
-      } finally {
-        await file.close();
-      }
+      const current = await readWorkFile(directory, entry.name);
+      revision = current.revision;
+      files.push({
+        id: entry.name,
+        revision,
+        preset: parseWorkPreset(current.source, entry.name),
+        error: null,
+      });
     } catch (error) {
-      // Parser diagnostics omit source excerpts; report only the filename and reason.
       const reason =
         error instanceof Error ? error.message.split('\n')[0] : 'Could not read preset.';
-      log(`[Work] Ignoring ${JSON.stringify(entry.name)}: ${reason}`);
+      files.push({ id: entry.name, revision, preset: null, error: reason });
     }
   }
-  return works.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  files.sort(
+    (a, b) =>
+      (a.preset?.name ?? a.id).localeCompare(b.preset?.name ?? b.id) || a.id.localeCompare(b.id),
+  );
+  return { directory, files, truncated };
+}
+
+export async function loadWorkPresets(
+  dataDirectory: string,
+  log: (message: string) => void = console.error,
+): Promise<WorkPreset[]> {
+  const catalog = await workCatalog(dataDirectory);
+  for (const file of catalog.files)
+    if (file.error) log(`[Work] Ignoring ${JSON.stringify(file.id)}: ${file.error}`);
+  if (catalog.truncated) log('[Work] Only the first 100 YAML files are loaded.');
+  return catalog.files.flatMap((file) => (file.preset ? [file.preset] : []));
+}
+
+function encodeWorkPreset(input: unknown): string {
+  if (!input || typeof input !== 'object' || Array.isArray(input))
+    throw new Error('Preset details are required.');
+  const values = input as Record<string, unknown>;
+  if (
+    Object.keys(values).some(
+      (key) => !['name', 'author', 'description', 'parameters', 'prompt'].includes(key),
+    )
+  )
+    throw new Error('Unknown preset field.');
+  if (!Array.isArray(values.parameters) || values.parameters.length > 32)
+    throw new Error('parameters must be a list of up to 32 string key:value pairs.');
+  const parameters = values.parameters.map((entry: unknown) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+      throw new Error('Each parameter needs a name and string default.');
+    const parameter = entry as Record<string, unknown>;
+    if (
+      Object.keys(parameter).length !== 2 ||
+      typeof parameter.key !== 'string' ||
+      typeof parameter.value !== 'string'
+    )
+      throw new Error('Each parameter needs a name and string default.');
+    return new Map([[parameter.key, parameter.value]]);
+  });
+  const source = stringify(
+    {
+      name: values.name,
+      author: values.author,
+      description: values.description,
+      parameters,
+      prompt: values.prompt,
+    },
+    { lineWidth: 0 },
+  );
+  parseWorkPreset(source, 'new.yaml');
+  if (Buffer.byteLength(source) > fileLimit)
+    throw new Error('Preset exceeds the 128 KiB file limit.');
+  return source;
+}
+
+export class WorkPresetConflict extends Error {}
+
+export class WorkPresetStore {
+  private queue: Promise<unknown> = Promise.resolve();
+  private directory: string;
+  constructor(private dataDirectory: string) {
+    this.directory = join(dataDirectory, 'work');
+  }
+  list() {
+    return workCatalog(this.dataDirectory);
+  }
+  private mutate<T>(action: () => Promise<T>): Promise<T> {
+    const result = this.queue.then(action);
+    this.queue = result.catch(() => {});
+    return result;
+  }
+  private async checkRevision(id: string, revision: string) {
+    workFilename(id);
+    if (typeof revision !== 'string' || !/^[a-f0-9]{64}$/.test(revision))
+      throw new Error('Reload the preset before changing it.');
+    let current;
+    try {
+      current = await readWorkFile(this.directory, id);
+    } catch (error) {
+      throw new WorkPresetConflict(
+        'This preset changed or was removed. Reload the list before changing it.',
+        {
+          cause: error,
+        },
+      );
+    }
+    if (current.revision !== revision)
+      throw new WorkPresetConflict(
+        'This preset changed outside this form. Reload the list before changing it.',
+      );
+  }
+  private async save(id: string, source: string, revision?: string): Promise<WorkPresetFile> {
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
+    const temporary = join(this.directory, `.preset-${randomUUID()}.tmp`);
+    try {
+      await writeFile(temporary, source, { flag: 'wx', mode: 0o600 });
+      if (revision === undefined) {
+        // An exclusive link publishes a complete new file without replacing an existing one.
+        await link(temporary, join(this.directory, id));
+      } else {
+        // Serialize Garden writes and recheck external edits immediately before atomic replacement.
+        await this.checkRevision(id, revision);
+        await rename(temporary, join(this.directory, id));
+      }
+    } finally {
+      await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT')
+          console.error('[Work] Could not remove a temporary preset file.');
+      });
+    }
+    return {
+      id,
+      preset: parseWorkPreset(source, id),
+      revision: createHash('sha256').update(source).digest('hex'),
+      error: null,
+    };
+  }
+  create(input: unknown) {
+    return this.mutate(async () => {
+      const source = encodeWorkPreset(input);
+      const catalog = await this.list();
+      if (catalog.files.length >= 100 || catalog.truncated)
+        throw new Error(
+          'Work supports up to 100 preset files. Remove one before creating another.',
+        );
+      const name =
+        parseWorkPreset(source, 'new.yaml')
+          .name.toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '')
+          .slice(0, 50) || 'work';
+      return this.save(`${name}-${randomUUID()}.yaml`, source);
+    });
+  }
+  update(id: string, revision: string, input: unknown) {
+    return this.mutate(async () => {
+      workFilename(id);
+      const source = encodeWorkPreset(input);
+      await this.checkRevision(id, revision);
+      return this.save(id, source, revision);
+    });
+  }
+  remove(id: string, revision: string) {
+    return this.mutate(async () => {
+      await this.checkRevision(id, revision);
+      const trash = join(this.directory, '.trash');
+      await mkdir(trash, { recursive: true, mode: 0o700 });
+      if (!(await lstat(trash)).isDirectory())
+        throw new Error('The preset trash path must be a regular directory.');
+      const deletedDirectory = join(trash, randomUUID());
+      await mkdir(deletedDirectory, { mode: 0o700 });
+      await this.checkRevision(id, revision);
+      await rename(join(this.directory, id), join(deletedDirectory, id));
+    });
+  }
 }

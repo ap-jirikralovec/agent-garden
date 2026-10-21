@@ -31,6 +31,10 @@ docs/delivery.md before changing session behavior.
   validation reasons without source/prompt contents and omit them from the picker.
   Substitute declared string parameters once, literally. Only Send may create an
   agent from the editable reviewed prompt, using the existing prompt/terminal path.
+  Settings manages presets through structured fields using the same validation.
+  Keep file writes confined to work, reject stale revisions, replace atomically,
+  and move deleted files into work/.trash for recovery. Preset management must not
+  create sessions or submit work. Saving normalizes YAML formatting/comments.
 - Codex terminal launchers use normal local resume with `--enable daemon_auto_start`,
   without `--remote`, model or reasoning overrides. In Codex 0.163.0, `--remote
 unix://` applies remote trust checks, while reasoning `-c` disables daemon reuse.

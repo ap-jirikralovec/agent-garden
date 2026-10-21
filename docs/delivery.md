@@ -663,3 +663,41 @@ and reload the browser to use the new API and wizard.
 
 - Deviation from initial plan: None. Send is the final action from the editable
   review screen, rather than an extra confirmation page.
+
+## Structured Work preset management and connection dot — 2026-10-21
+
+Starting from local YAML presets and guided agent creation, the goal is a structured
+manager under Settings for metadata, ordered parameter defaults and prompt fields.
+The user chose a structured form and continued Rails delivery. The header now uses
+an untagged connection dot with a subtle connected-state pulse and a transparent
+44×44 click target. Tooltip and accessible label retain connectivity information;
+reduced-motion preferences disable the pulse. Offline/paused state remains amber.
+
+Preset management reads both valid and broken files without submitting work.
+Validation reuses the existing parser. New files get generated names; edits retain
+the filename. Saves publish complete YAML files and normalize formatting/comments.
+Content revisions reject stale forms, including comment-only external edits, and
+Garden serializes its writes. External editors are not locked; the revision is
+rechecked immediately before replacement. Delete confirms and moves the original
+file to `work/.trash/<unique-id>/` for manual recovery. Agent sessions and the
+creation wizard's in-progress review remain unaffected.
+
+Acceptance evidence:
+
+| Requirement                              | Executed evidence                                                                                                                                                                                                                              |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Structured creation/editing              | Browser created a preset with metadata, a required parameter and prompt, then edited its name while retaining the filename. YAML output was inspected.                                                                                         |
+| Validation and broken files              | Store/API tests cover invalid fields, parameter validation and replacing a broken file. Browser showed broken-file errors and retained form data after an undeclared-placeholder error.                                                        |
+| Unsaved edits and external changes       | Browser Back/Keep editing retained edits. A comment added externally caused Save to reject the stale form; the external comment survived. Tests also cover simultaneous writes and stale deletion.                                             |
+| Recoverable deletion                     | Browser Cancel kept the preset, then confirmed Delete removed it from the list. The original YAML, including the external comment, was verified in `.trash`. Store tests verify recovery contents.                                             |
+| Local API boundaries                     | API tests cover request header/origin checks, unknown fields, encoded traversal, revision conflicts and CRUD without any provider execution. Store tests reject symlinks and invalid filenames.                                                |
+| Responsive layout and connection control | Desktop and 375×812 browser checks; narrow editor scrolls to usable Back/Save controls without overflow. Untagged dot opens Connections and exposes the count through its accessible label. Scoped CSS supplies pulse/reduced-motion behavior. |
+
+All 111 tests, TypeScript checks, lint, formatting, production build and diff
+checks pass. Browser checks used an isolated fake provider and temporary data.
+No real inference or terminal handoff was needed; no provider code changed.
+SonarQube is unavailable. Restart Garden's backend and reload the browser to use
+the new management API.
+
+- Deviation from initial plan: The connection indicator was refined to an untagged,
+  pulsing dot with a larger invisible click target at the user's request.

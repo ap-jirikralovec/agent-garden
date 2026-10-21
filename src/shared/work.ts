@@ -7,6 +7,19 @@ export interface WorkPreset {
   prompt: string;
 }
 
+export type WorkPresetInput = Omit<WorkPreset, 'id'>;
+export interface WorkPresetFile {
+  id: string;
+  revision: string | null;
+  preset: WorkPreset | null;
+  error: string | null;
+}
+export interface WorkPresetCatalog {
+  directory: string;
+  files: WorkPresetFile[];
+  truncated: boolean;
+}
+
 export function workPlaceholders(prompt: string): string[] {
   const keys: string[] = [];
   const remainder = prompt.replace(/{{([\s\S]*?)}}/g, (_, value: string) => {

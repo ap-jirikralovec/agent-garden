@@ -31,8 +31,18 @@ agent and submits the exact reviewed text. **Open terminal after creation** is
 checked by default; uncheck it to start without a terminal window. Conversations
 and approvals still belong in the agent's terminal.
 
-Create a `work` folder inside Garden's data directory and put one preset in each
-`.yaml` or `.yml` file. These files are local user data, not built-in workflows.
+Open **Settings → Manage presets** to create, edit or delete presets with a
+structured form for metadata, parameter names/defaults and the prompt. Saves
+validate the same schema as manually authored files. Invalid files appear here
+with their error and can be replaced or deleted, while remaining hidden from
+agent creation. Saving rewrites YAML formatting and comments. If a file changes
+after loading, reload the list before editing it again; unsaved changes are kept
+in the form until you discard them. Delete asks for confirmation and moves the
+file into `work/.trash/<unique-id>/`; recover it by moving it back into `work`.
+Managing presets never starts an agent or changes existing conversations.
+
+You can also create a `work` folder inside Garden's data directory and put one
+preset in each `.yaml` or `.yml` file. These files are local user data, not built-in workflows.
 Garden reloads them whenever the creation dialog opens. The empty Work picker
 shows the folder path; a custom `--data-dir PATH` uses `PATH/work`.
 

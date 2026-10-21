@@ -115,13 +115,15 @@ export class CodexRpc implements Rpc {
   }
 
   private receive(line: string) {
-    let message: { id?: number; error?: { message: string }; result?: unknown };
+    let message: { method?: string; id?: number; error?: { message: string }; result?: unknown };
     try {
       message = JSON.parse(line);
     } catch {
       return;
     }
-    if (typeof message.id !== 'number') return;
+    // Server requests have their own ID namespace. Leave approvals pending for
+    // the provider's terminal; they must never resolve a client RPC by accident.
+    if (message.method !== undefined || typeof message.id !== 'number') return;
     const request = this.pending.get(message.id);
     if (!request) return;
     this.pending.delete(message.id);

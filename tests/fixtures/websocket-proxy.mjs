@@ -10,6 +10,20 @@ http.on('upgrade', (request, socket, head) => {
     client.on('message', (raw) => {
       const message = JSON.parse(raw.toString());
       if (message.id === undefined) return;
+      if (message.method === 'test/approval-collision') {
+        client.send(
+          JSON.stringify({
+            id: message.id,
+            method: 'item/commandExecution/requestApproval',
+            params: {},
+          }),
+        );
+        setTimeout(
+          () => client.send(JSON.stringify({ id: message.id, result: { accepted: true } })),
+          10,
+        );
+        return;
+      }
       client.send(
         JSON.stringify({
           id: message.id,

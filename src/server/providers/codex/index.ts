@@ -11,13 +11,22 @@ export function codexCommand(
   agent: Agent,
   executable = 'codex',
   codexHome = process.env.CODEX_HOME,
+  initialPrompt?: string,
 ): TerminalCommand {
   if (agent.provider !== 'codex') throw new Error('This session does not belong to Codex.');
   // Presets are restored before opening. -c would disable implicit daemon reuse;
   // explicit --remote applies incorrect remote trust checks in Codex 0.163.0.
   return {
     executable,
-    args: ['--enable', 'daemon_auto_start', 'resume', agent.sessionId, '--cd', agent.project],
+    args: [
+      '--enable',
+      'daemon_auto_start',
+      'resume',
+      agent.sessionId,
+      '--cd',
+      agent.project,
+      ...(initialPrompt ? ['--', initialPrompt] : []),
+    ],
     ...(codexHome ? { env: { CODEX_HOME: codexHome } } : {}),
   };
 }
@@ -127,8 +136,17 @@ export class CodexProvider implements AgentProvider {
     }
   }
 
-  async openTerminal(agent: Agent) {
-    const command = codexCommand(agent, this.executable);
+  async startTask(agent: Agent, prompt: string): Promise<void> {
+    if (agent.provider !== this.id) throw new Error('This session does not belong to Codex.');
+    // Inherit the new thread's preset and permissions. Never retry task submission.
+    await this.rpc.request('turn/start', {
+      threadId: agent.sessionId,
+      input: [{ type: 'text', text: prompt, text_elements: [] }],
+    });
+  }
+
+  async openTerminal(agent: Agent, initialPrompt?: string) {
+    const command = codexCommand(agent, this.executable, process.env.CODEX_HOME, initialPrompt);
     await this.rpc.connect();
     const { thread } = await this.rpc.request<{ thread: Thread }>('thread/read', {
       threadId: agent.sessionId,

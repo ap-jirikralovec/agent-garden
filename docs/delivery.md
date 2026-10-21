@@ -554,3 +554,150 @@ handoff, the full test suite, type checks, lint, formatting, build, and the
 no-inference Codex and Claude smoke checks. A GNOME and KDE host check still needs
 to select a folder, create and reopen a session in the terminal, observe status
 changes and confirm the card survives a Garden restart.
+
+## Optional initial prompt — 2026-10-21
+
+Agent creation asks **How would you like to start:** for Codex, with **Empty shell**
+selected by default and **Prompt** revealing the textarea. Selecting Prompt widens
+only this dialog to 820px on desktop with a 200ms width transition (disabled by
+the existing reduced-motion preference); narrow windows keep viewport margins,
+stack model/reasoning fields and scroll to the footer. The optional, labeled
+textarea accepts up to 16,000 characters. Switching to Empty shell omits the draft;
+opening a new creation dialog resets the selection and prompt.
+
+Garden passes a nonblank prompt once to the initial interactive terminal launch,
+as the positional prompt after `codex resume <exact-session-id> ... --`. The
+installed CLI documents this argument as starting the session with a user prompt.
+Multiline text and shell syntax are preserved literally. Session preset creation,
+monitoring, approvals and subsequent Open terminal behavior retain their existing
+provider boundaries. No prompt is saved in Garden card metadata or retried by
+reopening. The private terminal launcher contains the initial command until
+replaced by Open terminal. A failed launch keeps the card and warns that the
+prompt must be pasted in the terminal manually.
+
+Verification: regression tests first failed for missing prompt handoff and
+validation, then passed. Coverage includes whitespace omission, bounds and null
+characters, Unicode API payloads, local-request protection, literal shell
+arguments, exact-session routing and prompt-free reopening. All 86 tests,
+TypeScript checks, lint, formatting and production build pass. The real installed
+Codex no-inference smoke check passes. An isolated Zen preview with a fake
+provider verified the collapsed/expanded dialog, multiline typing, creation and
+375px responsive layout with scrolling to usable footer controls. No real prompt
+or model task was submitted; actual first-task execution in a native terminal
+remains a host acceptance check.
+
+## Start a prompted agent without opening a terminal — 2026-10-21
+
+Prompt mode includes **Open terminal after creation**, checked by default. When
+unchecked, a nonblank prompt is required and **Create & start agent** creates the
+saved session and explicitly submits one `turn/start` through the Codex adapter.
+It inherits the thread's selected model, reasoning and existing permissions.
+Empty shell always opens a terminal; each fresh dialog resets the checkbox.
+
+This extends the earlier terminal-only initial-prompt agreement. Monitoring remains
+read-only. Garden never answers provider approval/input requests. Codex 0.163.0's
+`request_processors/thread_lifecycle.rs` replays pending server requests when the
+terminal resumes the exact session, allowing later interaction through Open terminal.
+RPC responses are now distinguished from server requests even when their numeric
+IDs overlap. Unconfirmed task submissions retain the card, warn the user to check
+its terminal, and are never automatically retried or resent on reopening.
+
+Verification covers creation without launching a terminal, empty-prompt rejection,
+strict API booleans, provider turn payload/preset inheritance, saved cards after
+submission errors, prompt-free reopening, and approval/request ID collisions.
+All 89 tests, TypeScript checks, lint, formatting, production build and the isolated
+Codex no-inference smoke pass. A fake-provider browser check verified Empty shell
+hides the checkbox, Prompt defaults it to checked, unchecking requires text and
+changes the submit label, and creation submits the exact prompt without calling
+the terminal launcher. Real task execution and approval handoff still require
+host acceptance; automated verification and the isolated Codex smoke submit no
+model task. Restart the Garden backend before using the new request field, even
+if the frontend has already reloaded.
+
+## Local Work presets and guided creation — 2026-10-21
+
+Approved from the Work conversation: add **Work** alongside Empty shell and
+Prompt. User-owned local YAML files contain `name`, `author`, `description`,
+`parameters` (a list of string key:value pairs) and `prompt`. Defaults remain
+editable and blank defaults require input. Broken presets must be validated,
+logged and hidden. The user explicitly selected an editable review and the flow
+**Choose work → Fill parameters → Review/edit prompt → Send**, with Rails delivery
+and the existing optional terminal launch.
+
+Implementation: `work` under the resolved Garden data directory is loaded on each
+creation-dialog open through the same-origin local API. `yaml` is the sole new
+runtime dependency. Each file is independently parsed and validated; errors log
+escaped filenames and reasons without prompt/source excerpts. Aliases, duplicate
+keys/parameters, unknown fields/placeholders, malformed placeholders and nonstring
+values are rejected. Files are read with size bounds and leaf symlinks are skipped.
+Limits are documented in README, including 100 files and 16,000 prompt characters.
+No presets ship as runtime content in the repository and loading never submits work.
+
+`WorkWizard` owns the local steps and drafts through `useWorkDraft`. Choose work
+also shows session setup; later steps retain that setup. Review is editable and
+Send uses the existing agent endpoint with the exact final text. Back retains
+parameter values and manual edits, including drafts for other presets in the same
+wizard. Changed parameters require confirmation before replacing edited review
+text. A fresh creation dialog resets its drafts. The existing responsive width
+transition, reduced-motion support, Empty shell/Prompt behavior, terminal checkbox,
+provider approvals and read-only monitoring remain in place.
+
+Acceptance evidence:
+
+| Requirement                                               | Executed evidence                                                                                                                                                                                                                                                                                             |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local YAML, metadata and editable string defaults         | Loader/parser tests validate metadata and ordered defaults. Browser picker displayed author/description and prefilled the default parameter.                                                                                                                                                                  |
+| Broken presets logged and absent from UI                  | Parser tests reject malformed fields, numeric keys/values, duplicates, aliases and undeclared/malformed placeholders. API test and browser picker omitted a broken file; the isolated server logged its filename and error without its source.                                                                |
+| Reload presets when opening creation                      | API test rereads a changed file and returns its updated name. The dialog issues a fresh preset request on every open, invalidating older in-flight loads. Missing folders return an empty list with the resolved folder path.                                                                                 |
+| Literal parameter rendering                               | Tests preserve multiline values, repeated parameters, dollar/shell syntax and placeholder-like inserted values without recursive expansion; missing values and oversized results fail.                                                                                                                        |
+| Multi-step editable review and draft preservation         | Wizard-state tests cover required selection/values, no-parameter work, Back/Next edits, switching presets, explicit replacement after parameter changes, invalid final prompts and fresh resets. Browser exercised parameter filling, generated review, manual edits, Back/Next and replacement confirmation. |
+| Send exact reviewed prompt using existing launch behavior | Browser Send returned HTTP 201; the fake provider recorded the edited multiline prompt with dollar syntax and literal braces unchanged, and no terminal-launch call when unchecked. Existing provider/launcher tests retain checked/unchecked creation, permission inheritance and no replay.                 |
+| Desktop and narrow layout                                 | Browser review checked on desktop and at 375×812. Progress wraps, text remains within the dialog, and scrolling reaches usable Cancel/Back/Send controls.                                                                                                                                                     |
+
+All 107 tests pass, along with TypeScript checks, lint, formatting, production
+build, diff checks and the installed Codex no-inference lifecycle smoke check.
+Real provider inference and native terminal/approval handoff were not exercised;
+the preview used temporary files and a fake provider. SonarQube is unavailable.
+See README for schema, paths, reload behavior and limits. Restart Garden's backend
+and reload the browser to use the new API and wizard.
+
+- Deviation from initial plan: None. Send is the final action from the editable
+  review screen, rather than an extra confirmation page.
+
+## Structured Work preset management and connection dot — 2026-10-21
+
+Starting from local YAML presets and guided agent creation, the goal is a structured
+manager under Settings for metadata, ordered parameter defaults and prompt fields.
+The user chose a structured form and continued Rails delivery. The header now uses
+an untagged connection dot with a subtle connected-state pulse and a transparent
+44×44 click target. Tooltip and accessible label retain connectivity information;
+reduced-motion preferences disable the pulse. Offline/paused state remains amber.
+
+Preset management reads both valid and broken files without submitting work.
+Validation reuses the existing parser. New files get generated names; edits retain
+the filename. Saves publish complete YAML files and normalize formatting/comments.
+Content revisions reject stale forms, including comment-only external edits, and
+Garden serializes its writes. External editors are not locked; the revision is
+rechecked immediately before replacement. Delete confirms and moves the original
+file to `work/.trash/<unique-id>/` for manual recovery. Agent sessions and the
+creation wizard's in-progress review remain unaffected.
+
+Acceptance evidence:
+
+| Requirement                              | Executed evidence                                                                                                                                                                                                                              |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Structured creation/editing              | Browser created a preset with metadata, a required parameter and prompt, then edited its name while retaining the filename. YAML output was inspected.                                                                                         |
+| Validation and broken files              | Store/API tests cover invalid fields, parameter validation and replacing a broken file. Browser showed broken-file errors and retained form data after an undeclared-placeholder error.                                                        |
+| Unsaved edits and external changes       | Browser Back/Keep editing retained edits. A comment added externally caused Save to reject the stale form; the external comment survived. Tests also cover simultaneous writes and stale deletion.                                             |
+| Recoverable deletion                     | Browser Cancel kept the preset, then confirmed Delete removed it from the list. The original YAML, including the external comment, was verified in `.trash`. Store tests verify recovery contents.                                             |
+| Local API boundaries                     | API tests cover request header/origin checks, unknown fields, encoded traversal, revision conflicts and CRUD without any provider execution. Store tests reject symlinks and invalid filenames.                                                |
+| Responsive layout and connection control | Desktop and 375×812 browser checks; narrow editor scrolls to usable Back/Save controls without overflow. Untagged dot opens Connections and exposes the count through its accessible label. Scoped CSS supplies pulse/reduced-motion behavior. |
+
+All 111 tests, TypeScript checks, lint, formatting, production build and diff
+checks pass. Browser checks used an isolated fake provider and temporary data.
+No real inference or terminal handoff was needed; no provider code changed.
+SonarQube is unavailable. Restart Garden's backend and reload the browser to use
+the new management API.
+
+- Deviation from initial plan: The connection indicator was refined to an untagged,
+  pulsing dot with a larger invisible click target at the user's request.

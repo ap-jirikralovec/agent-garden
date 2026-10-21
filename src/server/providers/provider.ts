@@ -45,6 +45,9 @@ export interface AgentProvider {
   // Discovery is read-only; providers without a supported listing API omit it.
   discoverSessions?(projects: string[], excludedSessionIds: string[]): Promise<DiscoveryResult>;
   readSession(agent: Agent): Promise<AgentObservation>;
-  openTerminal(agent: Agent): Promise<void>;
+  // Explicit creation action only; never called by observation or on reconnect.
+  startTask?(agent: Agent, prompt: string): Promise<void>;
+  // A creation-only prompt is handed to the interactive terminal, never monitoring.
+  openTerminal(agent: Agent, initialPrompt?: string): Promise<void>;
   close(): Promise<void>;
 }

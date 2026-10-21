@@ -355,6 +355,24 @@ export class Garden extends EventEmitter {
           'Choose a model and reasoning level from this provider’s current configuration.',
         );
       }
+      if (
+        input.initialPrompt !== undefined &&
+        (typeof input.initialPrompt !== 'string' ||
+          input.initialPrompt.length > 16000 ||
+          input.initialPrompt.includes('\0'))
+      )
+        throw new Error(
+          'Enter an initial prompt of up to 16,000 characters without null characters.',
+        );
+      if (input.openTerminal !== undefined && typeof input.openTerminal !== 'boolean')
+        throw new Error('Open terminal must be true or false.');
+      const initialPrompt = input.initialPrompt?.trim() ? input.initialPrompt : undefined;
+      if (initialPrompt && input.provider !== 'codex')
+        throw new Error('This provider does not support an initial prompt yet.');
+      if (input.openTerminal === false && (!initialPrompt || !runtime.adapter.startTask))
+        throw new Error(
+          'A supported provider and a nonblank initial prompt are required to start without a terminal.',
+        );
       const project = await prepareProject(input.project, input.createProject === true);
       const { sessionId, warning } = await runtime.adapter.createSession({
         name,
@@ -380,15 +398,30 @@ export class Garden extends EventEmitter {
       };
       await this.store.put(agent);
       const warnings = warning ? [warning] : [];
-      try {
-        await runtime.adapter.openTerminal(agent);
-      } catch (error) {
-        warnings.push(
-          error instanceof Error
-            ? error.message
-            : 'Session created, but the terminal could not open. Retry Open terminal.',
-        );
-      }
+      if (input.openTerminal === false) {
+        try {
+          await runtime.adapter.startTask!(agent, initialPrompt!);
+          agent.task = initialPrompt!.slice(0, 4000);
+          await this.store.update(agent.id, { task: agent.task });
+        } catch {
+          // The provider may have accepted the task before the connection failed.
+          // Preserve the saved session and avoid a duplicate submission.
+          warnings.push(
+            'Initial task submission was not confirmed. Open the terminal to check before sending it again.',
+          );
+        }
+      } else
+        try {
+          await runtime.adapter.openTerminal(agent, initialPrompt);
+        } catch (error) {
+          warnings.push(
+            error instanceof Error
+              ? error.message
+              : 'Session created, but the terminal could not open. Retry Open terminal.',
+          );
+          if (initialPrompt)
+            warnings.push('The initial prompt was not sent. Open the terminal and paste it there.');
+        }
       this.emitSnapshot();
       return { agent, warning: warnings.length ? warnings.join(' ') : null };
     } finally {

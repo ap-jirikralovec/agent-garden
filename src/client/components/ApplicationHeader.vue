@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useGardenStore } from '../stores/garden';
 import GardenIcon from './GardenIcon.vue';
@@ -12,6 +12,13 @@ const projects = ref<InstanceType<typeof ProjectsDialog>>();
 const { browserConnected, connectedCount, connectionsEnabled, monitorReady, loaded } =
   storeToRefs(useGardenStore());
 const connections = ref<InstanceType<typeof ConnectionsDialog>>();
+const connectionSummary = computed(() =>
+  !browserConnected.value
+    ? 'Dashboard offline'
+    : !connectionsEnabled.value
+      ? 'Connections paused'
+      : `${connectedCount.value} connected`,
+);
 </script>
 
 <template>
@@ -30,18 +37,17 @@ const connections = ref<InstanceType<typeof ConnectionsDialog>>();
       </button>
       <button
         type="button"
-        aria-label="Manage connections"
-        class="local-tag"
+        :aria-label="`Manage connections: ${connectionSummary}`"
+        :title="connectionSummary"
+        aria-haspopup="dialog"
+        class="connection-button"
         @click="connections?.open()"
       >
-        <span class="dot" :class="browserConnected && connectedCount ? 'green' : 'amber'"></span
-        >{{
-          !browserConnected
-            ? 'Dashboard offline'
-            : !connectionsEnabled
-              ? 'Connections paused'
-              : `${connectedCount} connected`
-        }}
+        <span
+          class="dot"
+          :class="browserConnected && connectedCount ? 'green' : 'amber'"
+          aria-hidden="true"
+        ></span>
       </button>
     </div>
   </header>
@@ -102,16 +108,17 @@ const connections = ref<InstanceType<typeof ConnectionsDialog>>();
   color: #828d7e;
   margin-top: var(--space-1);
 }
-.local-tag {
+.connection-button {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  font-size: 12px;
-  color: #63725f;
-  background: #edf1e7;
-  border: 1px solid #e0e7d6;
-  border-radius: 30px;
-  padding: 9px 13px;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-control);
+  padding: 0;
   cursor: pointer;
 }
 @include tokens.mobile {
@@ -126,13 +133,26 @@ const connections = ref<InstanceType<typeof ConnectionsDialog>>();
     width: 40px;
     height: 40px;
   }
-  .local-tag {
-    font-size: 0;
-    padding: 9px;
+}
+.connection-button .dot {
+  width: 8px;
+  height: 8px;
+}
+.connection-button .dot.green {
+  animation: connection-pulse 2.4s ease-out infinite;
+}
+@keyframes connection-pulse {
+  0% {
+    box-shadow: 0 0 0 0 #83a67066;
   }
-  .local-tag .dot {
-    width: 7px;
-    height: 7px;
+  75%,
+  100% {
+    box-shadow: 0 0 0 8px #83a67000;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .connection-button .dot {
+    animation: none;
   }
 }
 .header-actions {
@@ -149,9 +169,6 @@ const connections = ref<InstanceType<typeof ConnectionsDialog>>();
   .header-actions > .secondary {
     padding: 9px 11px;
     font-size: 12px;
-  }
-  .header-actions .local-tag {
-    display: flex;
   }
 }
 </style>

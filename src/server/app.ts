@@ -8,6 +8,7 @@ import { resolve, sep, extname } from 'node:path';
 import { isProviderId, type NewAgent, type Snapshot } from '../shared/types.js';
 import type { Garden } from './garden.js';
 import { checkProject } from './project.js';
+import { loadWorkPresets, WorkPresetStore, WorkPresetConflict } from './work.js';
 import { pickProjectFolder } from './folderPicker.js';
 
 function json(response: ServerResponse, status: number, body: unknown) {
@@ -15,12 +16,15 @@ function json(response: ServerResponse, status: number, body: unknown) {
   response.end(JSON.stringify(body));
 }
 
-async function readObject(request: IncomingMessage): Promise<Record<string, unknown>> {
+async function readObject(
+  request: IncomingMessage,
+  limit = 8192,
+): Promise<Record<string, unknown>> {
   let body = '';
   request.setEncoding('utf8');
   for await (const chunk of request) {
     body += chunk;
-    if (Buffer.byteLength(body) > 8192) throw new Error('The request is too large.');
+    if (Buffer.byteLength(body) > limit) throw new Error('The request is too large.');
   }
   let input: unknown;
   try {
@@ -34,12 +38,14 @@ async function readObject(request: IncomingMessage): Promise<Record<string, unkn
 }
 
 async function readAgent(request: IncomingMessage): Promise<NewAgent> {
-  const values = await readObject(request);
+  const values = await readObject(request, 96 * 1024);
   const limits: Record<string, number> = { name: 60, project: 4096, model: 200 };
   if (
     Object.keys(values).some(
       (key) =>
-        !['provider', 'reasoning', 'createProject'].includes(key) && !Object.hasOwn(limits, key),
+        !['provider', 'reasoning', 'createProject', 'initialPrompt', 'openTerminal'].includes(
+          key,
+        ) && !Object.hasOwn(limits, key),
     )
   )
     throw new Error('Unknown agent setting.');
@@ -47,6 +53,8 @@ async function readAgent(request: IncomingMessage): Promise<NewAgent> {
     if (typeof values[key] !== 'string' || !values[key].length || values[key].length > limit)
       throw new Error(`Enter a valid ${key}.`);
   }
+  if (values.openTerminal !== undefined && typeof values.openTerminal !== 'boolean')
+    throw new Error('Open terminal must be true or false.');
   if (values.createProject !== undefined && typeof values.createProject !== 'boolean')
     throw new Error('Folder creation confirmation must be true or false.');
   if (
@@ -54,19 +62,32 @@ async function readAgent(request: IncomingMessage): Promise<NewAgent> {
     (typeof values.reasoning !== 'string' || values.reasoning.length > 40)
   )
     throw new Error('Enter a valid reasoning level.');
+  if (
+    values.initialPrompt !== undefined &&
+    (typeof values.initialPrompt !== 'string' ||
+      values.initialPrompt.length > 16000 ||
+      values.initialPrompt.includes('\0'))
+  )
+    throw new Error('Enter an initial prompt of up to 16,000 characters without null characters.');
   if (!isProviderId(values.provider)) throw new Error('Choose a valid provider.');
   return values as unknown as NewAgent;
 }
 
 export async function createApp(
   garden: Garden,
-  options: { clientDirectory: string; dev?: boolean; pickFolder?: () => Promise<string | null> },
+  options: {
+    clientDirectory: string;
+    dev?: boolean;
+    pickFolder?: () => Promise<string | null>;
+    dataDirectory?: string;
+  },
 ) {
   let vite: Awaited<ReturnType<(typeof import('vite'))['createServer']>> | undefined;
   if (options.dev) {
     const { createServer } = await import('vite');
     vite = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'spa' });
   }
+  const workStore = options.dataDirectory ? new WorkPresetStore(options.dataDirectory) : null;
   const streams = new Set<ServerResponse>();
   const server = createHttpServer((request, response) => {
     void handle(request, response).catch((error) => {
@@ -74,7 +95,9 @@ export async function createApp(
         response.end();
         return;
       }
-      json(response, 400, { error: error instanceof Error ? error.message : 'Request failed.' });
+      json(response, error instanceof WorkPresetConflict ? 409 : 400, {
+        error: error instanceof Error ? error.message : 'Request failed.',
+      });
     });
   });
   server.requestTimeout = 15000;
@@ -104,6 +127,45 @@ export async function createApp(
       });
     }
     const pathname = new URL(request.url ?? '/', `http://${host}`).pathname;
+    if (request.method === 'GET' && pathname === '/api/work/manage') {
+      if (request.headers['x-garden-request'] !== '1')
+        return json(response, 403, { error: 'Open Garden to manage work presets.' });
+      if (!workStore) throw new Error('The local work folder is not configured.');
+      return json(response, 200, await workStore.list());
+    }
+    if (request.method === 'POST' && pathname === '/api/work') {
+      if (!workStore) throw new Error('The local work folder is not configured.');
+      const input = await readObject(request, 256 * 1024);
+      if (Object.keys(input).length !== 1 || !Object.hasOwn(input, 'preset'))
+        throw new Error('Preset details are required.');
+      return json(response, 201, await workStore.create(input.preset));
+    }
+    const workFilePath = pathname.match(/^\/api\/work\/files\/([^/]+)$/);
+    if (workFilePath && ['POST', 'DELETE'].includes(request.method ?? '')) {
+      if (!workStore) throw new Error('The local work folder is not configured.');
+      const id = decodeURIComponent(workFilePath[1]);
+      const input = await readObject(request, 256 * 1024);
+      const keys = request.method === 'POST' ? ['revision', 'preset'] : ['revision'];
+      if (
+        Object.keys(input).length !== keys.length ||
+        Object.keys(input).some((key) => !keys.includes(key)) ||
+        typeof input.revision !== 'string'
+      )
+        throw new Error('Reload the preset before changing it.');
+      if (request.method === 'POST')
+        return json(response, 200, await workStore.update(id, input.revision, input.preset));
+      await workStore.remove(id, input.revision);
+      return json(response, 200, { ok: true });
+    }
+    if (request.method === 'GET' && pathname === '/api/work') {
+      if (request.headers['x-garden-request'] !== '1')
+        return json(response, 403, { error: 'Open Garden to load work presets.' });
+      if (!options.dataDirectory) throw new Error('The local work folder is not configured.');
+      return json(response, 200, {
+        presets: await loadWorkPresets(options.dataDirectory),
+        directory: resolve(options.dataDirectory, 'work'),
+      });
+    }
     if (request.method === 'GET' && pathname === '/api/state')
       return json(response, 200, garden.snapshot());
     if (request.method === 'POST' && pathname === '/api/settings') {

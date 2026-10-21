@@ -15,12 +15,15 @@ function json(response: ServerResponse, status: number, body: unknown) {
   response.end(JSON.stringify(body));
 }
 
-async function readObject(request: IncomingMessage): Promise<Record<string, unknown>> {
+async function readObject(
+  request: IncomingMessage,
+  limit = 8192,
+): Promise<Record<string, unknown>> {
   let body = '';
   request.setEncoding('utf8');
   for await (const chunk of request) {
     body += chunk;
-    if (Buffer.byteLength(body) > 8192) throw new Error('The request is too large.');
+    if (Buffer.byteLength(body) > limit) throw new Error('The request is too large.');
   }
   let input: unknown;
   try {
@@ -34,12 +37,14 @@ async function readObject(request: IncomingMessage): Promise<Record<string, unkn
 }
 
 async function readAgent(request: IncomingMessage): Promise<NewAgent> {
-  const values = await readObject(request);
+  const values = await readObject(request, 96 * 1024);
   const limits: Record<string, number> = { name: 60, project: 4096, model: 200 };
   if (
     Object.keys(values).some(
       (key) =>
-        !['provider', 'reasoning', 'createProject'].includes(key) && !Object.hasOwn(limits, key),
+        !['provider', 'reasoning', 'createProject', 'initialPrompt', 'openTerminal'].includes(
+          key,
+        ) && !Object.hasOwn(limits, key),
     )
   )
     throw new Error('Unknown agent setting.');
@@ -47,6 +52,8 @@ async function readAgent(request: IncomingMessage): Promise<NewAgent> {
     if (typeof values[key] !== 'string' || !values[key].length || values[key].length > limit)
       throw new Error(`Enter a valid ${key}.`);
   }
+  if (values.openTerminal !== undefined && typeof values.openTerminal !== 'boolean')
+    throw new Error('Open terminal must be true or false.');
   if (values.createProject !== undefined && typeof values.createProject !== 'boolean')
     throw new Error('Folder creation confirmation must be true or false.');
   if (
@@ -54,6 +61,13 @@ async function readAgent(request: IncomingMessage): Promise<NewAgent> {
     (typeof values.reasoning !== 'string' || values.reasoning.length > 40)
   )
     throw new Error('Enter a valid reasoning level.');
+  if (
+    values.initialPrompt !== undefined &&
+    (typeof values.initialPrompt !== 'string' ||
+      values.initialPrompt.length > 16000 ||
+      values.initialPrompt.includes('\0'))
+  )
+    throw new Error('Enter an initial prompt of up to 16,000 characters without null characters.');
   if (!isProviderId(values.provider)) throw new Error('Choose a valid provider.');
   return values as unknown as NewAgent;
 }

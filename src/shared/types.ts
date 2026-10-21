@@ -87,6 +87,8 @@ export interface NewAgent {
   model: string;
   reasoning: string | null;
   createProject?: boolean;
+  initialPrompt?: string;
+  openTerminal?: boolean;
 }
 
 export interface ProjectCheck {

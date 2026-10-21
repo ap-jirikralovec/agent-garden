@@ -21,6 +21,11 @@ docs/delivery.md before changing session behavior.
 - Common provider contracts live in `src/server/providers/provider.ts`; Codex RPC,
   protocol, status mapping and resume behavior stay under `providers/codex`.
   Monitoring uses read methods, not thread/resume; observing must not alter work.
+- Initial prompts are a creation-only action. With Open terminal selected, pass them
+  as literal CLI arguments after `--`. Without it, require a nonblank prompt and
+  submit one provider turn with the saved preset/permissions. Never retry submission
+  automatically, submit through monitoring, or replay on Open terminal. Approvals
+  stay pending for the provider terminal. Blank prompts preserve empty-session behavior.
 - Codex terminal launchers use normal local resume with `--enable daemon_auto_start`,
   without `--remote`, model or reasoning overrides. In Codex 0.163.0, `--remote
 unix://` applies remote trust checks, while reasoning `-c` disables daemon reuse.

@@ -554,3 +554,62 @@ handoff, the full test suite, type checks, lint, formatting, build, and the
 no-inference Codex and Claude smoke checks. A GNOME and KDE host check still needs
 to select a folder, create and reopen a session in the terminal, observe status
 changes and confirm the card survives a Garden restart.
+
+## Optional initial prompt — 2026-10-21
+
+Agent creation asks **How would you like to start:** for Codex, with **Empty shell**
+selected by default and **Prompt** revealing the textarea. Selecting Prompt widens
+only this dialog to 820px on desktop with a 200ms width transition (disabled by
+the existing reduced-motion preference); narrow windows keep viewport margins,
+stack model/reasoning fields and scroll to the footer. The optional, labeled
+textarea accepts up to 16,000 characters. Switching to Empty shell omits the draft;
+opening a new creation dialog resets the selection and prompt.
+
+Garden passes a nonblank prompt once to the initial interactive terminal launch,
+as the positional prompt after `codex resume <exact-session-id> ... --`. The
+installed CLI documents this argument as starting the session with a user prompt.
+Multiline text and shell syntax are preserved literally. Session preset creation,
+monitoring, approvals and subsequent Open terminal behavior retain their existing
+provider boundaries. No prompt is saved in Garden card metadata or retried by
+reopening. The private terminal launcher contains the initial command until
+replaced by Open terminal. A failed launch keeps the card and warns that the
+prompt must be pasted in the terminal manually.
+
+Verification: regression tests first failed for missing prompt handoff and
+validation, then passed. Coverage includes whitespace omission, bounds and null
+characters, Unicode API payloads, local-request protection, literal shell
+arguments, exact-session routing and prompt-free reopening. All 86 tests,
+TypeScript checks, lint, formatting and production build pass. The real installed
+Codex no-inference smoke check passes. An isolated Zen preview with a fake
+provider verified the collapsed/expanded dialog, multiline typing, creation and
+375px responsive layout with scrolling to usable footer controls. No real prompt
+or model task was submitted; actual first-task execution in a native terminal
+remains a host acceptance check.
+
+## Start a prompted agent without opening a terminal — 2026-10-21
+
+Prompt mode includes **Open terminal after creation**, checked by default. When
+unchecked, a nonblank prompt is required and **Create & start agent** creates the
+saved session and explicitly submits one `turn/start` through the Codex adapter.
+It inherits the thread's selected model, reasoning and existing permissions.
+Empty shell always opens a terminal; each fresh dialog resets the checkbox.
+
+This extends the earlier terminal-only initial-prompt agreement. Monitoring remains
+read-only. Garden never answers provider approval/input requests. Codex 0.163.0's
+`request_processors/thread_lifecycle.rs` replays pending server requests when the
+terminal resumes the exact session, allowing later interaction through Open terminal.
+RPC responses are now distinguished from server requests even when their numeric
+IDs overlap. Unconfirmed task submissions retain the card, warn the user to check
+its terminal, and are never automatically retried or resent on reopening.
+
+Verification covers creation without launching a terminal, empty-prompt rejection,
+strict API booleans, provider turn payload/preset inheritance, saved cards after
+submission errors, prompt-free reopening, and approval/request ID collisions.
+All 89 tests, TypeScript checks, lint, formatting, production build and the isolated
+Codex no-inference smoke pass. A fake-provider browser check verified Empty shell
+hides the checkbox, Prompt defaults it to checked, unchecking requires text and
+changes the submit label, and creation submits the exact prompt without calling
+the terminal launcher. Real task execution and approval handoff still require
+host acceptance; automated verification and the isolated Codex smoke submit no
+model task. Restart the Garden backend before using the new request field, even
+if the frontend has already reloaded.

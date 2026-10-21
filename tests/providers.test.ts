@@ -29,6 +29,8 @@ class FakeProvider implements AgentProvider {
   connected = false;
   connections = 0;
   opened: Agent[] = [];
+  prompts: (string | undefined)[] = [];
+  started: { agent: Agent; prompt: string }[] = [];
   presets: SessionPreset[] = [];
   fail = false;
   constructor(
@@ -51,8 +53,12 @@ class FakeProvider implements AgentProvider {
     this.presets.push(preset);
     return { sessionId: 'same-native-session', warning: null };
   }
-  async openTerminal(agent: Agent) {
+  async openTerminal(agent: Agent, initialPrompt?: string) {
     this.opened.push(agent);
+    this.prompts.push(initialPrompt);
+  }
+  async startTask(agent: Agent, prompt: string) {
+    this.started.push({ agent, prompt });
   }
   async readSession(agent: Agent): Promise<AgentObservation> {
     return {
@@ -319,4 +325,93 @@ it('hides backend-disabled providers and cards, prevents connections and access,
     sessionId: agent.sessionId,
     connection: 'connected',
   });
+});
+
+it('hands an initial prompt to the first terminal only, including after a failed launch', async () => {
+  const { directory, store } = await setup();
+  const provider = new FakeProvider('codex', 'Codex', config('model', null));
+  const garden = new Garden(store, [provider]);
+  await garden.refresh();
+  const prompt = "  Review this project's code.\nKeep $(literal) text.  ";
+  const { agent } = await garden.create({
+    provider: 'codex',
+    name: 'Prompted',
+    project: directory,
+    model: 'model',
+    reasoning: null,
+    initialPrompt: prompt,
+  });
+  expect(provider.prompts).toEqual([prompt]);
+  expect(provider.presets[0]).not.toHaveProperty('initialPrompt');
+  expect(store.list()[0]).not.toHaveProperty('initialPrompt');
+  await garden.open(agent.id);
+  expect(provider.prompts).toEqual([prompt, undefined]);
+
+  provider.openTerminal = async () => {
+    throw new Error('Terminal unavailable');
+  };
+  const failed = await garden.create({
+    provider: 'codex',
+    name: 'Saved',
+    project: directory,
+    model: 'model',
+    reasoning: null,
+    initialPrompt: prompt,
+  });
+  expect(failed.warning).toContain('initial prompt was not sent');
+  expect(store.list().some((saved) => saved.id === failed.agent.id)).toBe(true);
+});
+
+it('treats whitespace prompts as empty and rejects invalid prompts before creating a session', async () => {
+  const { directory, store } = await setup();
+  const provider = new FakeProvider('codex', 'Codex', config('model', null));
+  const garden = new Garden(store, [provider]);
+  await garden.refresh();
+  const input = {
+    provider: 'codex' as const,
+    name: 'Miso',
+    project: directory,
+    model: 'model',
+    reasoning: null,
+  };
+  await garden.create({ ...input, initialPrompt: ' \n ' });
+  expect(provider.prompts).toEqual([undefined]);
+  for (const initialPrompt of ['a'.repeat(16001), 'hello\0world', 42]) {
+    await expect(
+      garden.create({ ...input, initialPrompt: initialPrompt as string }),
+    ).rejects.toThrow('initial prompt');
+  }
+  expect(provider.presets).toHaveLength(1);
+});
+
+it('starts a prompted agent without a terminal, never resends on open, and rejects empty background creation', async () => {
+  const { directory, store } = await setup();
+  const provider = new FakeProvider('codex', 'Codex', config('model', null));
+  const garden = new Garden(store, [provider]);
+  await garden.refresh();
+  const input = {
+    provider: 'codex' as const,
+    name: 'Background',
+    project: directory,
+    model: 'model',
+    reasoning: null,
+    openTerminal: false,
+  };
+  for (const initialPrompt of [undefined, '', ' \n ']) {
+    await expect(garden.create({ ...input, initialPrompt })).rejects.toThrow('prompt');
+  }
+  expect(provider.presets).toHaveLength(0);
+  const { agent, warning } = await garden.create({ ...input, initialPrompt: 'Do the task' });
+  expect(warning).toBeNull();
+  expect(provider.opened).toEqual([]);
+  expect(provider.started).toEqual([{ agent, prompt: 'Do the task' }]);
+  await garden.open(agent.id);
+  expect(provider.started).toHaveLength(1);
+  expect(provider.prompts).toEqual([undefined]);
+  provider.startTask = async () => {
+    throw new Error('Connection lost');
+  };
+  const failed = await garden.create({ ...input, initialPrompt: 'Another task' });
+  expect(failed.warning).toContain('not confirmed');
+  expect(store.list().some((saved) => saved.id === failed.agent.id)).toBe(true);
 });

@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { AgentStore } from '../src/server/store.js';
-import { launchScript } from '../src/server/terminal.js';
+import { launchScript, type TerminalCommand } from '../src/server/terminal.js';
 import { CodexProvider, codexCommand } from '../src/server/providers/codex/index.js';
 import { Garden } from '../src/server/garden.js';
 import type { Rpc, Thread } from '../src/server/providers/codex/protocol.js';
@@ -126,4 +126,65 @@ it('restores an unloaded preset only when opening, and leaves loaded sessions al
   await garden.open(agent.id);
   expect(calls.map((call) => call.method)).toEqual(['thread/read']);
   expect(opened).toEqual([agent.id, agent.id]);
+});
+
+it('passes multiline initial prompts literally after -- without changing the preset', async () => {
+  const agent = makeAgent();
+  const prompt = "--help\nIt's `literal` $(printf INJECTED) text";
+  let command!: TerminalCommand;
+  const provider = new CodexProvider(
+    {
+      connected: true,
+      async connect() {},
+      async close() {},
+      async request<T>(method: string, params: Record<string, unknown>): Promise<T> {
+        expect(method).toBe('thread/read');
+        expect(params).toEqual({ threadId: agent.sessionId });
+        return { thread: { status: { type: 'idle' } } } as T;
+      },
+    },
+    {
+      async open(id, launched) {
+        expect(id).toBe(agent.id);
+        command = launched;
+      },
+    },
+    '/bin/echo',
+  );
+  await provider.openTerminal(agent, prompt);
+  expect(command.args.slice(-2)).toEqual(['--', prompt]);
+  const { stdout } = await promisify(execFile)('/bin/sh', ['-c', launchScript(command)]);
+  expect(stdout).toContain(prompt);
+  expect(command.args).not.toContain('--model');
+  expect(codexCommand(agent).args).not.toContain(prompt);
+});
+
+it('starts the exact Codex session through the provider without launching a terminal or overriding permissions', async () => {
+  const agent = makeAgent();
+  const calls: { method: string; params: Record<string, unknown> }[] = [];
+  const rpc: Rpc = {
+    connected: true,
+    async connect() {},
+    async close() {},
+    async request<T>(method: string, params: Record<string, unknown>): Promise<T> {
+      calls.push({ method, params });
+      return { turn: { id: 'turn', status: 'inProgress' } } as T;
+    },
+  };
+  const provider = new CodexProvider(rpc, {
+    async open() {
+      throw new Error('Must not open a terminal');
+    },
+  });
+  const prompt = 'Inspect the project.\nKeep the selected preset.';
+  await provider.startTask(agent, prompt);
+  expect(calls).toEqual([
+    {
+      method: 'turn/start',
+      params: {
+        threadId: agent.sessionId,
+        input: [{ type: 'text', text: prompt, text_elements: [] }],
+      },
+    },
+  ]);
 });

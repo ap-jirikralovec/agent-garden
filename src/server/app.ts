@@ -8,6 +8,7 @@ import { resolve, sep, extname } from 'node:path';
 import { isProviderId, type NewAgent, type Snapshot } from '../shared/types.js';
 import type { Garden } from './garden.js';
 import { checkProject } from './project.js';
+import { loadWorkPresets } from './work.js';
 import { pickProjectFolder } from './folderPicker.js';
 
 function json(response: ServerResponse, status: number, body: unknown) {
@@ -74,7 +75,12 @@ async function readAgent(request: IncomingMessage): Promise<NewAgent> {
 
 export async function createApp(
   garden: Garden,
-  options: { clientDirectory: string; dev?: boolean; pickFolder?: () => Promise<string | null> },
+  options: {
+    clientDirectory: string;
+    dev?: boolean;
+    pickFolder?: () => Promise<string | null>;
+    dataDirectory?: string;
+  },
 ) {
   let vite: Awaited<ReturnType<(typeof import('vite'))['createServer']>> | undefined;
   if (options.dev) {
@@ -118,6 +124,15 @@ export async function createApp(
       });
     }
     const pathname = new URL(request.url ?? '/', `http://${host}`).pathname;
+    if (request.method === 'GET' && pathname === '/api/work') {
+      if (request.headers['x-garden-request'] !== '1')
+        return json(response, 403, { error: 'Open Garden to load work presets.' });
+      if (!options.dataDirectory) throw new Error('The local work folder is not configured.');
+      return json(response, 200, {
+        presets: await loadWorkPresets(options.dataDirectory),
+        directory: resolve(options.dataDirectory, 'work'),
+      });
+    }
     if (request.method === 'GET' && pathname === '/api/state')
       return json(response, 200, garden.snapshot());
     if (request.method === 'POST' && pathname === '/api/settings') {

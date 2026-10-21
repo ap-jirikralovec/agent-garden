@@ -32,7 +32,10 @@ garden is **dashboard**. Additional gardens and a header selector are deferred.
   routing remain on the backend.
 - `components/` holds the app header, connection settings, global settings, project management, creation dialog and
   provider logo. Dialog fields, errors and pending
-  states stay local. Successful creation/removal requests a refresh from App;
+  states stay local. `WorkWizard.vue` owns the Work selection, parameter and editable
+  review steps through the local `useWorkDraft.ts` state. The creation dialog loads
+  local presets on open and reuses the existing agent API for the final reviewed
+  prompt; no work is submitted by loading or navigating the wizard. Successful creation/removal requests a refresh from App;
   connection/global settings and project management apply the returned snapshot to Pinia.
   Global external visibility is persisted on the backend and applied before
   snapshots reach the client; it is not another garden-local filter. GardenIcon

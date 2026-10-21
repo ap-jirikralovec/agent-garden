@@ -3,6 +3,8 @@ import { computed, nextTick, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import type { ProviderId } from '../../shared/types';
 import { useGardenStore } from '../stores/garden';
+import WorkWizard from './WorkWizard.vue';
+import type { WorkPreset } from '../../shared/work';
 import { gardenApi } from '../api';
 const emit = defineEmits<{ created: [] }>();
 const store = useGardenStore();
@@ -11,8 +13,15 @@ const dialog = ref<HTMLDialogElement>();
 const nameInput = ref<HTMLInputElement>();
 const creating = ref(false);
 const openTerminal = ref(true);
-const startMode = ref<'empty' | 'prompt'>('empty');
-const promptExpanded = computed(() => startMode.value === 'prompt');
+const startMode = ref<'empty' | 'prompt' | 'work'>('empty');
+const isWork = computed(() => startMode.value === 'work' && form.value.provider === 'codex');
+const workWizard = ref<InstanceType<typeof WorkWizard>>();
+const workPresets = ref<WorkPreset[]>([]);
+const workLoading = ref(false);
+const workLoadError = ref('');
+const workDirectory = ref('');
+let workLoadRevision = 0;
+const promptExpanded = computed(() => startMode.value !== 'empty');
 const promptInput = ref<HTMLTextAreaElement>();
 const formError = ref('');
 const form = ref({
@@ -59,6 +68,24 @@ async function addProject() {
   }
 }
 
+async function loadWork() {
+  const revision = ++workLoadRevision;
+  workLoading.value = true;
+  workLoadError.value = '';
+  workPresets.value = [];
+  try {
+    const result = await gardenApi.work(AbortSignal.timeout(10000));
+    if (revision !== workLoadRevision) return;
+    workPresets.value = result.presets;
+    workDirectory.value = result.directory;
+  } catch (cause) {
+    if (revision === workLoadRevision)
+      workLoadError.value = `Could not load work presets: ${(cause as Error).message}`;
+  } finally {
+    if (revision === workLoadRevision) workLoading.value = false;
+  }
+}
+
 async function open(project?: string) {
   formError.value = '';
   startMode.value = 'empty';
@@ -72,13 +99,14 @@ async function open(project?: string) {
     reasoning: null,
   };
   selectProvider();
+  void loadWork();
   dialog.value?.showModal();
   await nextTick();
   nameInput.value?.focus();
 }
 
 async function selectStartMode() {
-  if (promptExpanded.value) {
+  if (startMode.value === 'prompt') {
     await nextTick();
     promptInput.value?.focus();
   }
@@ -87,6 +115,12 @@ async function selectStartMode() {
 async function createAgent() {
   const provider = selectedProvider.value;
   if (creating.value || picking.value || !selectedReady.value || !provider) return;
+  if (isWork.value && !workWizard.value?.next()) return;
+  const initialPrompt = isWork.value
+    ? workWizard.value?.prompt
+    : promptExpanded.value && provider.id === 'codex'
+      ? form.value.initialPrompt
+      : undefined;
   creating.value = true;
   formError.value = '';
   try {
@@ -98,13 +132,12 @@ async function createAgent() {
       ...form.value,
       provider: provider.id,
       openTerminal: !promptExpanded.value || form.value.provider !== 'codex' || openTerminal.value,
-      initialPrompt:
-        promptExpanded.value && provider.id === 'codex' ? form.value.initialPrompt : undefined,
+      initialPrompt,
     });
     dialog.value?.close();
     store.notify(
       result.warning ||
-        (promptExpanded.value && form.value.initialPrompt.trim()
+        (initialPrompt?.trim()
           ? openTerminal.value
             ? `${result.agent.name} is ready. Your initial prompt was passed to the terminal.`
             : `${result.agent.name} is ready. Its initial task was submitted without opening a terminal.`
@@ -143,80 +176,90 @@ defineExpose({ open });
       </div>
       <h2 id="dialog-title">A new agent, a fresh start.</h2>
       <p class="dialog-intro">Choose its setup and optionally add its first task.</p>
-      <label class="form-label" for="agent-provider"
-        >Agent type<select
-          id="agent-provider"
-          v-model="form.provider"
-          :disabled="creating || picking"
-          @change="selectProvider"
-        >
-          <option v-for="provider in readyProviders" :key="provider.id" :value="provider.id">
-            {{ provider.name }}
-          </option>
-        </select></label
-      >
-      <label class="form-label" for="agent-name"
-        >Name<input
-          id="agent-name"
-          ref="nameInput"
-          v-model="form.name"
-          required
-          maxlength="60"
-          placeholder="e.g. Miso"
-          :disabled="creating || picking"
-          autocomplete="off"
-      /></label>
-      <label class="form-label" for="agent-project"
-        >Project
-        <select id="agent-project" v-model="form.project" required :disabled="creating || picking">
-          <option disabled value="">Choose a project</option>
-          <option v-for="project in state.projects" :key="project.path" :value="project.path">
-            {{ project.name }} — {{ project.path }}
-          </option>
-        </select>
-      </label>
-      <button
-        class="secondary add-project"
-        type="button"
-        :disabled="creating || picking || !browserConnected"
-        @click="addProject"
-      >
-        {{ picking ? 'Choose a project folder…' : '＋ Add project' }}
-      </button>
-      <div class="form-columns">
-        <label class="form-label" for="agent-model"
-          >Model<select
-            id="agent-model"
-            v-model="form.model"
-            required
+      <div v-if="!isWork || !workWizard || workWizard.step === 0">
+        <label class="form-label" for="agent-provider"
+          >Agent type<select
+            id="agent-provider"
+            v-model="form.provider"
             :disabled="creating || picking"
-            @change="selectModel"
+            @change="selectProvider"
           >
-            <option
-              v-for="model in selectedProvider?.configuration?.models"
-              :key="model.id"
-              :value="model.id"
-            >
-              {{ model.name }}
+            <option v-for="provider in readyProviders" :key="provider.id" :value="provider.id">
+              {{ provider.name }}
             </option>
           </select></label
         >
-        <label v-if="selectedModel?.reasoningLevels.length" class="form-label" for="agent-reasoning"
-          >Reasoning<select
-            id="agent-reasoning"
-            v-model="form.reasoning"
+        <label class="form-label" for="agent-name"
+          >Name<input
+            id="agent-name"
+            ref="nameInput"
+            v-model="form.name"
+            required
+            maxlength="60"
+            placeholder="e.g. Miso"
+            :disabled="creating || picking"
+            autocomplete="off"
+        /></label>
+        <label class="form-label" for="agent-project"
+          >Project
+          <select
+            id="agent-project"
+            v-model="form.project"
             required
             :disabled="creating || picking"
           >
-            <option
-              v-for="effort in selectedModel?.reasoningLevels"
-              :key="effort.id"
-              :value="effort.id"
-            >
-              {{ effort.name }}
+            <option disabled value="">Choose a project</option>
+            <option v-for="project in state.projects" :key="project.path" :value="project.path">
+              {{ project.name }} — {{ project.path }}
             </option>
-          </select></label
+          </select>
+        </label>
+        <button
+          class="secondary add-project"
+          type="button"
+          :disabled="creating || picking || !browserConnected"
+          @click="addProject"
         >
+          {{ picking ? 'Choose a project folder…' : '＋ Add project' }}
+        </button>
+        <div class="form-columns">
+          <label class="form-label" for="agent-model"
+            >Model<select
+              id="agent-model"
+              v-model="form.model"
+              required
+              :disabled="creating || picking"
+              @change="selectModel"
+            >
+              <option
+                v-for="model in selectedProvider?.configuration?.models"
+                :key="model.id"
+                :value="model.id"
+              >
+                {{ model.name }}
+              </option>
+            </select></label
+          >
+          <label
+            v-if="selectedModel?.reasoningLevels.length"
+            class="form-label"
+            for="agent-reasoning"
+            >Reasoning<select
+              id="agent-reasoning"
+              v-model="form.reasoning"
+              required
+              :disabled="creating || picking"
+            >
+              <option
+                v-for="effort in selectedModel?.reasoningLevels"
+                :key="effort.id"
+                :value="effort.id"
+              >
+                {{ effort.name }}
+              </option>
+            </select></label
+          >
+        </div>
       </div>
       <div v-if="form.provider === 'codex'" class="initial-prompt">
         <label class="form-label" for="agent-start-mode">
@@ -229,9 +272,19 @@ defineExpose({ open });
           >
             <option value="empty">Empty shell</option>
             <option value="prompt">Prompt</option>
+            <option value="work">Work</option>
           </select>
         </label>
-        <div v-if="promptExpanded" id="initial-prompt-editor" class="prompt-editor">
+        <WorkWizard
+          v-if="isWork"
+          ref="workWizard"
+          :presets="workPresets"
+          :loading="workLoading"
+          :load-error="workLoadError"
+          :directory="workDirectory"
+          :busy="creating || picking"
+        />
+        <div v-if="startMode === 'prompt'" id="initial-prompt-editor" class="prompt-editor">
           <label class="form-label" for="agent-prompt">
             Initial prompt
             <span class="optional">{{ openTerminal ? 'Optional' : 'Required' }}</span>
@@ -251,15 +304,20 @@ defineExpose({ open });
             Starts the first task after creation. You’ll handle conversation and approvals in the
             terminal. Up to 16,000 characters.
           </p>
-          <label class="terminal-option">
-            <input v-model="openTerminal" type="checkbox" :disabled="creating || picking" />
-            Open terminal after creation
-          </label>
-          <p v-if="!openTerminal">
-            The agent starts without a terminal window. If it needs input or approval, use Open
-            terminal on its card.
-          </p>
         </div>
+      </div>
+      <div
+        v-if="promptExpanded && form.provider === 'codex' && (!isWork || workWizard?.step === 2)"
+        class="launch-options"
+      >
+        <label class="terminal-option">
+          <input v-model="openTerminal" type="checkbox" :disabled="creating || picking" />
+          Open terminal after creation
+        </label>
+        <p v-if="!openTerminal">
+          The agent starts without a terminal window. If it needs input or approval, use Open
+          terminal on its card.
+        </p>
       </div>
       <p class="dialog-note">
         {{
@@ -277,8 +335,18 @@ defineExpose({ open });
           :disabled="creating || picking"
           @click="dialog?.close()"
         >
-          Cancel</button
-        ><button
+          Cancel
+        </button>
+        <button
+          v-if="isWork && workWizard && workWizard.step > 0"
+          class="secondary"
+          type="button"
+          :disabled="creating || picking"
+          @click="workWizard.back()"
+        >
+          Back
+        </button>
+        <button
           class="primary"
           type="submit"
           :disabled="
@@ -286,17 +354,27 @@ defineExpose({ open });
             picking ||
             !selectedReady ||
             !form.project ||
-            (promptExpanded && !openTerminal && !form.initialPrompt.trim())
+            (isWork
+              ? !workWizard?.canContinue
+              : promptExpanded && !openTerminal && !form.initialPrompt.trim())
           "
         >
           {{
             creating
               ? 'Creating session…'
-              : promptExpanded && !openTerminal
-                ? 'Create & start agent'
-                : 'Create & open terminal'
+              : isWork
+                ? workWizard?.step === 0
+                  ? 'Fill parameters'
+                  : workWizard?.step === 1
+                    ? 'Review prompt'
+                    : 'Send'
+                : promptExpanded && !openTerminal
+                  ? 'Create & start agent'
+                  : 'Create & open terminal'
           }}
-          <span v-if="!creating && (!promptExpanded || openTerminal)" aria-hidden="true">↗</span>
+          <span v-if="!isWork && !creating && (!promptExpanded || openTerminal)" aria-hidden="true"
+            >↗</span
+          >
         </button>
       </div>
     </form>

@@ -33,7 +33,11 @@ try {
   await store.load();
   const garden = new Garden(store, await createProviders(directory));
   const clientDirectory = fileURLToPath(new URL('../client', import.meta.url));
-  const app = await createApp(garden, { clientDirectory, dev: values.dev });
+  const app = await createApp(garden, {
+    clientDirectory,
+    dev: values.dev,
+    dataDirectory: directory,
+  });
   const url = await app.listen({ host: '127.0.0.1', port });
   garden.start();
   console.log(

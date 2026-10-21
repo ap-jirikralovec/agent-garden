@@ -613,3 +613,53 @@ the terminal launcher. Real task execution and approval handoff still require
 host acceptance; automated verification and the isolated Codex smoke submit no
 model task. Restart the Garden backend before using the new request field, even
 if the frontend has already reloaded.
+
+## Local Work presets and guided creation — 2026-10-21
+
+Approved from the Work conversation: add **Work** alongside Empty shell and
+Prompt. User-owned local YAML files contain `name`, `author`, `description`,
+`parameters` (a list of string key:value pairs) and `prompt`. Defaults remain
+editable and blank defaults require input. Broken presets must be validated,
+logged and hidden. The user explicitly selected an editable review and the flow
+**Choose work → Fill parameters → Review/edit prompt → Send**, with Rails delivery
+and the existing optional terminal launch.
+
+Implementation: `work` under the resolved Garden data directory is loaded on each
+creation-dialog open through the same-origin local API. `yaml` is the sole new
+runtime dependency. Each file is independently parsed and validated; errors log
+escaped filenames and reasons without prompt/source excerpts. Aliases, duplicate
+keys/parameters, unknown fields/placeholders, malformed placeholders and nonstring
+values are rejected. Files are read with size bounds and leaf symlinks are skipped.
+Limits are documented in README, including 100 files and 16,000 prompt characters.
+No presets ship as runtime content in the repository and loading never submits work.
+
+`WorkWizard` owns the local steps and drafts through `useWorkDraft`. Choose work
+also shows session setup; later steps retain that setup. Review is editable and
+Send uses the existing agent endpoint with the exact final text. Back retains
+parameter values and manual edits, including drafts for other presets in the same
+wizard. Changed parameters require confirmation before replacing edited review
+text. A fresh creation dialog resets its drafts. The existing responsive width
+transition, reduced-motion support, Empty shell/Prompt behavior, terminal checkbox,
+provider approvals and read-only monitoring remain in place.
+
+Acceptance evidence:
+
+| Requirement                                               | Executed evidence                                                                                                                                                                                                                                                                                             |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local YAML, metadata and editable string defaults         | Loader/parser tests validate metadata and ordered defaults. Browser picker displayed author/description and prefilled the default parameter.                                                                                                                                                                  |
+| Broken presets logged and absent from UI                  | Parser tests reject malformed fields, numeric keys/values, duplicates, aliases and undeclared/malformed placeholders. API test and browser picker omitted a broken file; the isolated server logged its filename and error without its source.                                                                |
+| Reload presets when opening creation                      | API test rereads a changed file and returns its updated name. The dialog issues a fresh preset request on every open, invalidating older in-flight loads. Missing folders return an empty list with the resolved folder path.                                                                                 |
+| Literal parameter rendering                               | Tests preserve multiline values, repeated parameters, dollar/shell syntax and placeholder-like inserted values without recursive expansion; missing values and oversized results fail.                                                                                                                        |
+| Multi-step editable review and draft preservation         | Wizard-state tests cover required selection/values, no-parameter work, Back/Next edits, switching presets, explicit replacement after parameter changes, invalid final prompts and fresh resets. Browser exercised parameter filling, generated review, manual edits, Back/Next and replacement confirmation. |
+| Send exact reviewed prompt using existing launch behavior | Browser Send returned HTTP 201; the fake provider recorded the edited multiline prompt with dollar syntax and literal braces unchanged, and no terminal-launch call when unchecked. Existing provider/launcher tests retain checked/unchecked creation, permission inheritance and no replay.                 |
+| Desktop and narrow layout                                 | Browser review checked on desktop and at 375×812. Progress wraps, text remains within the dialog, and scrolling reaches usable Cancel/Back/Send controls.                                                                                                                                                     |
+
+All 107 tests pass, along with TypeScript checks, lint, formatting, production
+build, diff checks and the installed Codex no-inference lifecycle smoke check.
+Real provider inference and native terminal/approval handoff were not exercised;
+the preview used temporary files and a fake provider. SonarQube is unavailable.
+See README for schema, paths, reload behavior and limits. Restart Garden's backend
+and reload the browser to use the new API and wizard.
+
+- Deviation from initial plan: None. Send is the final action from the editable
+  review screen, rather than an extra confirmation page.

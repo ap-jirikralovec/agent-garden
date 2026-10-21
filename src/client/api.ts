@@ -1,3 +1,4 @@
+import type { WorkPreset } from '../shared/work';
 import type { Agent, NewAgent, Project, ProjectCheck, ProviderId, Snapshot } from '../shared/types';
 
 async function request<T>(
@@ -18,6 +19,8 @@ async function request<T>(
 }
 
 export const gardenApi = {
+  work: (signal?: AbortSignal) =>
+    request<{ presets: WorkPreset[]; directory: string }>('/api/work', 'GET', undefined, signal),
   state: (signal?: AbortSignal) => request<Snapshot>('/api/state', 'GET', undefined, signal),
   setShowExternalAgents: (showExternalAgents: boolean) =>
     request<Snapshot>('/api/settings', 'POST', { showExternalAgents }),

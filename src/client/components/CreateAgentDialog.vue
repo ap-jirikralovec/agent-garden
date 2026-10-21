@@ -439,10 +439,14 @@ textarea:focus-visible {
 textarea::placeholder {
   color: var(--color-muted);
 }
-.prompt-editor p {
+.prompt-editor p,
+.launch-options p {
   color: var(--color-muted);
   font-size: 12px;
   line-height: 1.6;
+}
+.launch-options p {
+  margin-bottom: var(--space-4);
 }
 @include tokens.mobile {
   .form-columns {
